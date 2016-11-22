@@ -1,0 +1,86 @@
+name:             config-ini
+version:          0.1.0.0
+synopsis:         A library for simple INI-based configuration files.
+homepage:         https://github.com/aisamanra/config-ini
+description:      The @config-ini@ library is a small monadic language
+                  for writing simple configuration languages with convenient,
+                  human-readable error messages.
+                  .
+                  > parseConfig :: IniParser (Text, Int, Bool)
+                  > parseConfig = section "NETWORK" $ do
+                  >   user <- field        "user"
+                  >   port <- fieldOf      "port" number
+                  >   enc  <- fieldFlagDef "encryption" True
+                  >   return (user, port, enc)
+
+license:          BSD3
+license-file:     LICENSE
+author:           Getty Ritter <gettyritter@gmail.com>
+maintainer:       Getty Ritter <gettyritter@gmail.com>
+copyright:        ©2016 Getty Ritter
+category:         Configuration
+build-type:       Simple
+cabal-version:    >= 1.14
+
+flag build-examples
+  description: Build example applications
+  default:     False
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Data.Ini.Config
+                     , Data.Ini.Raw
+  ghc-options:         -Wall
+  build-depends:       base >=4.7 && <4.10
+                     , text
+                     , unordered-containers
+                     , transformers
+                     , megaparsec
+  default-language:    Haskell2010
+
+executable basic-example
+  if !flag(build-examples)
+    buildable: False
+  hs-source-dirs:   basic-example
+  main-is:          Main.hs
+  ghc-options:      -Wall
+  build-depends:    base >=4.7 && <4.10
+                  , text
+                  , config-ini
+  default-language: Haskell2010
+
+executable config-example
+  if !flag(build-examples)
+    buildable: False
+  hs-source-dirs:   config-example
+  main-is:          Main.hs
+  ghc-options:      -Wall
+  build-depends:    base >=4.7 && <4.10
+                  , text
+                  , config-ini
+  default-language: Haskell2010
+
+test-suite test-ini-compat
+  type:             exitcode-stdio-1.0
+  ghc-options:      -Wall
+  default-language: Haskell2010
+  hs-source-dirs:   test/ini-compat
+  main-is:          Main.hs
+  build-depends:    base
+                  , ini
+                  , config-ini
+                  , QuickCheck
+                  , unordered-containers
+                  , text
+
+test-suite test-suite
+  type:             exitcode-stdio-1.0
+  ghc-options:      -Wall
+  default-language: Haskell2010
+  hs-source-dirs:   test/general
+  main-is:          Main.hs
+  build-depends:    base
+                  , config-ini
+                  , unordered-containers
+                  , text
+                  , directory
