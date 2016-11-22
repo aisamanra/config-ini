@@ -31,6 +31,7 @@ module Data.Ini.Config
 , flag
 ) where
 
+import           Control.Applicative (Alternative(..))
 import           Control.Monad.Trans.Except
 import qualified Data.HashMap.Strict as HM
 import           Data.Ini.Config.Raw
@@ -51,12 +52,12 @@ type StParser s a = ExceptT String ((->) s) a
 -- | An 'IniParser' value represents a computation for parsing entire
 --   INI-format files.
 newtype IniParser a = IniParser (StParser Ini a)
-  deriving (Functor, Applicative, Monad)
+  deriving (Functor, Applicative, Alternative, Monad)
 
 -- | A 'SectionParser' value represents a computation for parsing a single
 --   section of an INI-format file.
 newtype SectionParser a = SectionParser (StParser IniSection a)
-  deriving (Functor, Applicative, Monad)
+  deriving (Functor, Applicative, Alternative, Monad)
 
 -- | Parse a 'Text' value as an INI file and run an 'IniParser' over it
 parseIniFile :: Text -> IniParser a -> Either String a
