@@ -331,7 +331,7 @@ flag s = case T.toLower s of
 -- while the fields within sections are parsed by 'SectionParser'
 -- computations, like 'field' and its variations. If we want to
 -- parse an INI file like the one above, treating the entire
--- `LOCAL` section as optional, we can write it like this:
+-- @LOCAL@ section as optional, we can write it like this:
 --
 -- > data Config = Config
 -- >   { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
