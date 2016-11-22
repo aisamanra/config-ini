@@ -44,7 +44,9 @@ parseIni t = case runParser pIni "ini file" t of
 
 pIni :: Parser Ini
 pIni = sBlanks *> (go `fmap` (many (pSection <?> "section") <* eof))
-  where go vs = Ini (HM.fromList [ (isName v, v) | v <- vs ])
+  where go vs = Ini $ HM.fromList [ (T.toLower (isName v), v)
+                                  | v <- vs
+                                  ]
 
 sBlanks :: Parser ()
 sBlanks = skipMany (void eol <|> sComment)
@@ -65,7 +67,7 @@ pSection = do
   end <- getCurrentLine
   sBlanks
   return IniSection
-    { isName      = T.toLower (T.strip name)
+    { isName      = T.strip name
     , isVals      = HM.fromList [ (vName v, v) | v <- vals ]
     , isStartLine = start
     , isEndLine   = end
