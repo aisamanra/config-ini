@@ -1,7 +1,7 @@
 module Main where
 
 import           Data.List
-import           Data.Ini.Raw
+import           Data.Ini.Config.Raw
 import           Data.HashMap.Strict (HashMap)
 import           Data.Text (Text)
 import qualified Data.Text.IO as T
@@ -9,7 +9,7 @@ import           System.Directory
 import           System.Exit
 
 dir :: FilePath
-dir = "test/general/cases"
+dir = "test/prewritten/cases"
 
 main :: IO ()
 main = do

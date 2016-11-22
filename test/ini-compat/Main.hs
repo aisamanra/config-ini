@@ -4,7 +4,7 @@ import           Data.Char
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Ini as I1
-import qualified Data.Ini.Raw as I2
+import qualified Data.Ini.Config.Raw as I2
 import           Data.Text (Text)
 import qualified Data.Text as T
 

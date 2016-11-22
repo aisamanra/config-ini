@@ -33,7 +33,7 @@ flag build-examples
 library
   hs-source-dirs:      src
   exposed-modules:     Data.Ini.Config
-                     , Data.Ini.Raw
+                     , Data.Ini.Config.Raw
   ghc-options:         -Wall
   build-depends:       base                  >=4.7 && <4.10
                      , text                  >=1.2.2 && <1.3
@@ -45,7 +45,7 @@ library
 executable basic-example
   if !flag(build-examples)
     buildable: False
-  hs-source-dirs:   basic-example
+  hs-source-dirs:   examples/basic-example
   main-is:          Main.hs
   ghc-options:      -Wall
   build-depends:    base >=4.7 && <4.10
@@ -56,7 +56,7 @@ executable basic-example
 executable config-example
   if !flag(build-examples)
     buildable: False
-  hs-source-dirs:   config-example
+  hs-source-dirs:   examples/config-example
   main-is:          Main.hs
   ghc-options:      -Wall
   build-depends:    base >=4.7 && <4.10
@@ -77,11 +77,11 @@ test-suite test-ini-compat
                   , unordered-containers
                   , text
 
-test-suite test-suite
+test-suite test-prewritten
   type:             exitcode-stdio-1.0
   ghc-options:      -Wall
   default-language: Haskell2010
-  hs-source-dirs:   test/general
+  hs-source-dirs:   test/prewritten
   main-is:          Main.hs
   build-depends:    base
                   , config-ini

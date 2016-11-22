@@ -33,7 +33,7 @@ module Data.Ini.Config
 
 import           Control.Monad.Trans.Except
 import qualified Data.HashMap.Strict as HM
-import           Data.Ini.Raw
+import           Data.Ini.Config.Raw
 import           Data.String (IsString(..))
 import           Data.Text (Text)
 import qualified Data.Text as T

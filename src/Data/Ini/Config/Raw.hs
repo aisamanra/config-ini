@@ -1,4 +1,4 @@
-module Data.Ini.Raw
+module Data.Ini.Config.Raw
 ( Ini(..)
 , IniSection(..)
 , IniValue(..)
