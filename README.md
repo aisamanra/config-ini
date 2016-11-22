@@ -22,16 +22,18 @@ The combinators provided here are designed to write quick and idiomatic parsers 
 
 ~~~.haskell
 data Config = Config
-  { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
-    deriving (Eq, Show)
+  { cfNetwork :: NetworkConfig
+  , cfLocal :: Maybe LocalConfig
+  } deriving (Eq, Show)
 
 data NetworkConfig = NetworkConfig
-  { netHost :: String, netPort :: Int }
-    deriving (Eq, Show)
+  { netHost :: String
+  , netPort :: Int
+  } deriving (Eq, Show)
 
 data LocalConfig = LocalConfig
-  { localUser :: Text }
-    deriving (Eq, Show)
+  { localUser :: Text
+  } deriving (Eq, Show)
 
 configParser :: IniParser Config
 configParser = do
@@ -40,7 +42,7 @@ configParser = do
     port <- fieldOf "port" number
     return NetworkConfig { netHost = host, netPort = port }
   locCf <- sectionMb "LOCAL" $
-    LocalConfig <$field "user"
+    LocalConfig <$> field "user"
   return Config { cfNetwork = netCf, cfLocal = locCf }
 ~~~
 
