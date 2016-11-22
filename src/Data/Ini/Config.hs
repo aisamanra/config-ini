@@ -65,11 +65,13 @@ parseIniFile text (IniParser mote) = do
   runExceptT mote ini
 
 -- | Find a named section in the INI file and parse it with the provided
---   section parser, failing if the section does not exist.
+--   section parser, failing if the section does not exist. In order to
+--   support classic INI files with capitalized section names, section
+--   lookup is __case-insensitive__.
 --
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ section "ONE" (field "x")
 --   Right "hello"
---   >>> parseIniFile "[ONE]\nx = hello\n" $ section "TWO" (field "y")
+--   >>> parseIniFile "[ONE]\nx = hello\n" $ section "TWO" (field "x")
 --   Left "No top-level section named \"TWO\""
 section :: Text -> SectionParser a -> IniParser a
 section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
@@ -79,10 +81,13 @@ section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 
 -- | Find a named section in the INI file and parse it with the provided
 --   section parser, returning 'Nothing' if the section does not exist.
+--   In order to
+--   support classic INI files with capitalized section names, section
+--   lookup is __case-insensitive__.
 --
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionMb "ONE" (field "x")
 --   Right (Just "hello")
---   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionMb "TWO" (field "y")
+--   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionMb "TWO" (field "x")
 --   Right Nothing
 sectionMb :: Text -> SectionParser a -> IniParser (Maybe a)
 sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
@@ -92,10 +97,13 @@ sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 
 -- | Find a named section in the INI file and parse it with the provided
 --   section parser, returning a default value if the section does not exist.
+--   In order to
+--   support classic INI files with capitalized section names, section
+--   lookup is __case-insensitive__.
 --
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionDef "ONE" "def" (field "x")
 --   Right "hello"
---   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionDef "TWO" "def" (field "y")
+--   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionDef "TWO" "def" (field "x")
 --   Right "def"
 sectionDef :: Text -> a -> SectionParser a -> IniParser a
 sectionDef name def (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
@@ -140,9 +148,9 @@ field name = SectionParser $ vValue `fmap` rawField name
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldOf "x" number)
 --   Right 72
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (fieldOf "x" number)
---   Left "Line 2, in section \"main\": Unable to parse \"hello\" as a value of type Integer"
+--   Left "Line 2, in section \"MAIN\": Unable to parse \"hello\" as a value of type Integer"
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldOf "y" number)
---   Left "Missing field \"y\" in section \"main\""
+--   Left "Missing field \"y\" in section \"MAIN\""
 fieldOf :: Text -> (Text -> Either String a) -> SectionParser a
 fieldOf name parse = SectionParser $ do
   sec <- getSectionName
@@ -167,7 +175,7 @@ fieldMb name = SectionParser $ fmap vValue `fmap` rawFieldMb name
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldMbOf "x" number)
 --   Right 72
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (fieldMbOf "x" number)
---   Left "Line 2, in section \"main\": Unable to parse \"hello\" as a value of type Integer"
+--   Left "Line 2, in section \"MAIN\": Unable to parse \"hello\" as a value of type Integer"
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldMbOf "y" number)
 --   Right Nothing
 fieldMbOf :: Text -> (Text -> Either String a) -> SectionParser (Maybe a)
@@ -199,7 +207,7 @@ fieldDef name def = SectionParser $ ExceptT $ \m ->
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldDefOf "x" number 99)
 --   Right 72
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (fieldDefOf "x" number 99)
---   Left "Line 2, in section \"main\": Unable to parse \"hello\" as a value of type Integer"
+--   Left "Line 2, in section \"MAIN\": Unable to parse \"hello\" as a value of type Integer"
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldDefOf "y" number 99)
 --   Right 99
 fieldDefOf :: Text -> (Text -> Either String a) -> a -> SectionParser a
@@ -228,7 +236,7 @@ fieldFlag name = fieldOf name flag
 --   >>> parseIniFile "[MAIN]\nx = yes\n" $ section "MAIN" (fieldFlagDef "x" False)
 --   Right True
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (fieldFlagDef "x" False)
---   Left "Line 2, in section \"main\": Unable to parse \"hello\" as a boolean"
+--   Left "Line 2, in section \"MAIN\": Unable to parse \"hello\" as a boolean"
 --   >>> parseIniFile "[MAIN]\nx = yes\n" $ section "MAIN" (fieldFlagDef "y" False)
 --   Right False
 fieldFlagDef :: Text -> Bool -> SectionParser Bool
