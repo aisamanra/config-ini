@@ -30,7 +30,7 @@ module Data.Ini.Config
 , flag
 ) where
 
-import           Control.Applicative (Alternative(..))
+import           Control.Applicative (Applicative(..), Alternative(..))
 import           Control.Monad.Trans.Except
 import qualified Data.HashMap.Strict as HM
 import           Data.Ini.Config.Raw
