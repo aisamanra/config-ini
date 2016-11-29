@@ -10,8 +10,8 @@ import qualified Data.Text as T
 
 import           Test.QuickCheck
 
-iniEquiv :: I1.Ini -> Bool
-iniEquiv raw = case (i1, i2) of
+iniEquiv :: ArbIni -> Bool
+iniEquiv (ArbIni raw) = case (i1, i2) of
    (Right i1', Right i2') ->
      let i1'' = lower i1'
          i2'' = toMaps i2'
@@ -28,14 +28,22 @@ lower (I1.Ini hm) =
 toMaps :: I2.Ini -> HashMap Text (HashMap Text Text)
 toMaps (I2.Ini m) = fmap (fmap I2.vValue . I2.isVals) m
 
-instance Arbitrary I1.Ini where
-  arbitrary = (I1.Ini . HM.fromList) <$> listOf sections
-    where sections = (,) <$> str <*> section
-          str = (T.pack <$> arbitrary) `suchThat` (\ t ->
+newtype ArbIni = ArbIni I1.Ini deriving (Show)
+
+instance Arbitrary ArbIni where
+  arbitrary = (ArbIni . I1.Ini . HM.fromList) `fmap` listOf sections
+    where sections = do
+            name <- str
+            sec  <- section
+            return (name, sec)
+          str = (T.pack `fmap` arbitrary) `suchThat` (\ t ->
                    T.all (\ c -> isAlphaNum c || c == ' ')
                    t && not (T.null t))
-          section = HM.fromList <$> listOf kv
-          kv = (,) <$> str <*> str
+          section = HM.fromList `fmap` listOf kv
+          kv = do
+            name <- str
+            val  <- str
+            return (name, val)
 
 main :: IO ()
 main = quickCheck iniEquiv
