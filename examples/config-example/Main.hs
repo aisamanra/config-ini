@@ -25,7 +25,7 @@ configParser = do
     port <- fieldOf "port" number
     return NetworkConfig { netHost = host, netPort = port }
   locCf <- sectionMb "LOCAL" $
-    LocalConfig <$> field "user"
+    LocalConfig `fmap` field "user"
   return Config { cfNetwork = netCf, cfLocal = locCf }
 
 main :: IO ()
