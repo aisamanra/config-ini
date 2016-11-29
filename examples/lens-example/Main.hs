@@ -3,7 +3,7 @@
 
 module Main where
 
-import Data.Ini.Config.Lens
+import Data.Ini.Config.St
 import Data.Text (Text)
 import Lens.Micro.Platform (makeLenses)
 
@@ -22,8 +22,8 @@ defaultConfig = Config
   , _confUseEncryption = True
   }
 
-parseConfig :: IniLensParser Config ()
-parseConfig = sectionL "network" $ do
+parseConfig :: IniStParser Config ()
+parseConfig = sectionSt "network" $ do
   confUsername      .=  field     "user"
   confPort          .=  fieldOf   "port" number
   confUseEncryption .=? fieldMbOf "encryption" flag
@@ -35,4 +35,4 @@ example = "[NETWORK]\n\
 
 main :: IO ()
 main = do
-  print (parseIniFileL example defaultConfig parseConfig)
+  print (parseIniFileSt example defaultConfig parseConfig)

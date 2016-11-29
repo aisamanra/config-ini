@@ -53,6 +53,76 @@ We can run our computation with `parseIniFile`, which, when run on our example f
 Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})
 ~~~
 
+## Setter- and Lens-Based Usage
+
+The above example had an INI file split into two sections (`NETWORK` and `LOCAL`) and a data type with a corresponding structure (containing a `NetworkConfig` and `Maybe LocalConfig` field), which allowed each `section`-level parser to construct a chunk of the configuration and then combine them. This works well if our configuration file has the same structure as our data type, but that might not be what we want. Let's imagine we want to construct our `Config` type as a flat record like this:
+
+~~~.haskell
+data Config = Config
+  { _cfHost :: String
+  , _cfPort :: Int
+  , _cfUser :: Maybe Text
+  } deriving (Eq, Show)
+~~~
+
+In this case, we can't construct a `Config` value until we've parsed all three fields in two distinct subsections. One way of doing this is to return the intermediate values from our `section` parsers and construct the value at the end:
+
+~~~.haskell
+configParser :: IniParser Config
+configParser = do
+  (host, port) <- section "NETWORK" $ do
+    h <- fieldOf "host" string
+    p <- fieldOf "port" number
+    return (h, p)
+  user <- section "LOCAL" $ fieldMb "user"
+  return (Config host port user)
+~~~
+
+This is awkward and repetitive. We could flatten it out by using the same `section` parser multiple times, but this has its own problems, such as unnecessary repetition of the `"NETWORK"` string literal, unnecessarily repetitive table lookups, and general verbosity:
+
+~~~.haskell
+configParser :: IniParser Config
+configParser = do
+  host <- section "NETWORK" $ fieldOf "host" string
+  port <- section "NETWORK" $ fieldOf "port" number
+  user <- section "LOCAL" $ fieldMb "user"
+  return (Config host port user)
+~~~
+
+One way of resolving this is to use the `Data.Ini.Config.St` module, which provides a slightly different abstraction: the functions exported by this module assume that you start with a default configuration and each field acts as an update on that underlying value. The monads in this module have an extra type parameter that represents the value being modified. The easiest way to use this is with lenses and the `.=` and `.=?` operators, which take a lens and a normal `SectionParser` value, and produce a `SectionStParser` value that uses the lens to update the underlying type:
+
+~~~.haskell
+makeLenses ''Config
+
+configParser :: IniStParser Config ()
+configParser = do
+  sectionSt "NETWORK" $ do
+    cfHost .= fieldOf "host" string
+    cfPort .= fieldOf "port" number
+  sectionSt "LOCAL" $ do
+    cfUser .= fieldMb "user"
+~~~
+
+In order to use this parser, we will need to provide an existing value of `Config` so we can apply our updates to it. This is a downside to this approach: in this case, even though the `host` and `port` fields are obligatory, we need to provide dummy values for them.
+
+~~~.haskell
+myParseIni :: Text -> Either String Config
+myParseIni t = parseIniFileSt t defaultConfig configParser
+  where defaultConfig = Config "unset" 0 Nothing
+~~~
+
+The implementation isn't tied to lenses, and many of the functions exported by `Data.Ini.Config.St` expected any generic setter, and not a lens specifically. If we didn't want to use lenses specifically, we can still take advantage of this library in a more verbose way:
+
+~~~.haskell
+configParser :: IniStParser Config ()
+configParser = do
+  sectionSt "NETWORK" $ do
+    fieldOfSt "host" string (\ h s -> s { _cfHost = h })
+    fieldOfSt "port" number (\ p s -> s { _cfPort = p })
+  sectionSt "LOCAL" $ do
+    fieldMbSt "user" (\ u s -> s { _cfUser = u })
+~~~
+
 ## Combinators and Conventions
 
 There are several variations on the same basic functionality that appear in `config-ini`. All functions that start with `section` are for parsing section-level chunks of an INI file, while all functions that start with `field` are for parsing key-value pairs within a section. Because it's reasonably common, there are also special `fieldFlag` functions which return `Bool` values, parsed in a relatively loose way.

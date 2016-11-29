@@ -34,8 +34,8 @@ flag build-examples
 library
   hs-source-dirs:      src
   exposed-modules:     Data.Ini.Config
-                     , Data.Ini.Config.Lens
                      , Data.Ini.Config.Raw
+                     , Data.Ini.Config.St
   ghc-options:         -Wall
   build-depends:       base                  >=4.7 && <4.10
                      , text                  >=1.2.2 && <1.3
