@@ -137,7 +137,7 @@ rawField name = do
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (field "x")
 --   Right "hello"
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (field "y")
---   Left "Missing field \"y\" in section \"main\""
+--   Left "Missing field \"y\" in section \"MAIN\""
 field :: Text -> SectionParser Text
 field name = SectionParser $ vValue `fmap` rawField name
 
@@ -173,7 +173,7 @@ fieldMb name = SectionParser $ fmap vValue `fmap` rawFieldMb name
 --   fail.
 --
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldMbOf "x" number)
---   Right 72
+--   Right (Just 72)
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (fieldMbOf "x" number)
 --   Left "Line 2, in section \"MAIN\": Unable to parse \"hello\" as a value of type Integer"
 --   >>> parseIniFile "[MAIN]\nx = 72\n" $ section "MAIN" (fieldMbOf "y" number)
@@ -226,7 +226,7 @@ fieldDefOf name parse def = SectionParser $ do
 --   >>> parseIniFile "[MAIN]\nx = yes\n" $ section "MAIN" (fieldFlag "x")
 --   Right True
 --   >>> parseIniFile "[MAIN]\nx = yes\n" $ section "MAIN" (fieldFlag "y")
---   Left "Missing field \"y\" in section \"main\""
+--   Left "Missing field \"y\" in section \"MAIN\""
 fieldFlag :: Text -> SectionParser Bool
 fieldFlag name = fieldOf name flag
 
@@ -248,7 +248,7 @@ fieldFlagDef name def = fieldDefOf name flag def
 --   with a human-readable error message if reading fails.
 --
 --   >>> readable "(5, 7)" :: Either String (Int, Int)
---   Right (5, 7)
+--   Right (5,7)
 --   >>> readable "hello" :: Either String (Int, Int)
 --   Left "Unable to parse \"hello\" as a value of type (Int,Int)"
 readable :: forall a. (Read a, Typeable a) => Text -> Either String a
@@ -294,7 +294,7 @@ string = return . fromString . T.unpack
 --   >>> flag "F"
 --   Right False
 --   >>> flag "That's a secret!"
---   Left "Unable to parse \"that's a secret!\" as a boolean"
+--   Left "Unable to parse \"That's a secret!\" as a boolean"
 flag :: Text -> Either String Bool
 flag s = case T.toLower s of
   "true"  -> Right True
@@ -307,6 +307,41 @@ flag s = case T.toLower s of
   "n"     -> Right False
   _       -> Left ("Unable to parse " ++ show s ++ " as a boolean")
 
+
+-- $setup
+--
+-- >>> :{
+-- data NetworkConfig = NetworkConfig
+--    { netHost :: String, netPort :: Int }
+--     deriving (Eq, Show)
+-- >>> :}
+--
+-- >>> :{
+-- data LocalConfig = LocalConfig
+--   { localUser :: Text }
+--     deriving (Eq, Show)
+-- >>> :}
+--
+-- >>> :{
+-- data Config = Config
+--   { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
+--     deriving (Eq, Show)
+-- >>> :}
+--
+-- >>> :{
+-- let configParser = do
+--       netCf <- section "NETWORK" $ do
+--         host <- fieldOf "host" string
+--         port <- fieldOf "port" number
+--         return NetworkConfig { netHost = host, netPort = port }
+--       locCf <- sectionMb "LOCAL" $
+--         LocalConfig <$> field "user"
+--       return Config { cfNetwork = netCf, cfLocal = locCf }
+-- >>> :}
+--
+-- >>> :{
+--    let example = "[NETWORK]\nhost = example.com\nport = 7878\n\n# here is a comment\n[LOCAL]\nuser = terry\n"
+-- >>> :}
 
 -- $main
 -- The 'config-ini' library exports some simple monadic functions to
