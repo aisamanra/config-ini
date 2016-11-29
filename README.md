@@ -65,7 +65,7 @@ data Config = Config
   } deriving (Eq, Show)
 ~~~
 
-In this case, we can't construct a `Config` value until we've parsed all three fields in two distinct subsections. One way of doing this is to return the intermediate values from our `section` parsers and construct the value at the end:
+In this case, we can't construct a `Config` value until we've parsed all three fields in two distinct subsections. One way of doing this is to return the intermediate values from our `section` parsers and construct the `Config` value at the end, once we have all three of its fields:
 
 ~~~.haskell
 configParser :: IniParser Config
@@ -78,7 +78,7 @@ configParser = do
   return (Config host port user)
 ~~~
 
-This is awkward and repetitive. We could flatten it out by using the same `section` parser multiple times, but this has its own problems, such as unnecessary repetition of the `"NETWORK"` string literal, unnecessarily repetitive table lookups, and general verbosity:
+This is unfortunately awkward and repetitive. An alternative is to flatten it out by repeating invocations of `section` like below, but this has its own problems, such as unnecessary repetition of the `"NETWORK"` string literal, unnecessarily repetitive table lookups, and general verbosity:
 
 ~~~.haskell
 configParser :: IniParser Config
@@ -89,7 +89,7 @@ configParser = do
   return (Config host port user)
 ~~~
 
-One way of resolving this is to use the `Data.Ini.Config.St` module, which provides a slightly different abstraction: the functions exported by this module assume that you start with a default configuration and each field acts as an update on that underlying value. The monads in this module have an extra type parameter that represents the value being modified. The easiest way to use this is with lenses and the `.=` and `.=?` operators, which take a lens and a normal `SectionParser` value, and produce a `SectionStParser` value that uses the lens to update the underlying type:
+In situations like these, you can instead use the `Data.Ini.Config.St` module, which provides a slightly different abstraction: the functions exported by this module assume that you start with a default configuration value, and parsing a field allows you to _update_ that configuration with the value of a field. The monads exported by this module have an extra type parameter that represents the type of the value being updated. The easiest way to use this module is by combining lenses with the `.=` and `.=?` operators, which take a lens and a normal `SectionParser` value, and produce a `SectionStParser` value that uses the lens to update the underlying type:
 
 ~~~.haskell
 makeLenses ''Config
@@ -103,7 +103,7 @@ configParser = do
     cfUser .= fieldMb "user"
 ~~~
 
-In order to use this parser, we will need to provide an existing value of `Config` so we can apply our updates to it. This is a downside to this approach: in this case, even though the `host` and `port` fields are obligatory, we need to provide dummy values for them.
+In order to use this parser, we will need to provide an existing value of `Config` so we can apply our updates to it. This is the biggest downside to this approach: in this case, even though the `host` and `port` fields are obligatory and will be overwritten by the parser, we still need to provide dummy values for them.
 
 ~~~.haskell
 myParseIni :: Text -> Either String Config
@@ -111,7 +111,7 @@ myParseIni t = parseIniFileSt t defaultConfig configParser
   where defaultConfig = Config "unset" 0 Nothing
 ~~~
 
-The implementation isn't tied to lenses, and many of the functions exported by `Data.Ini.Config.St` expected any generic setter, and not a lens specifically. If we didn't want to use lenses specifically, we can still take advantage of this library in a more verbose way:
+The `IniStParser` implementation isn't tied to lenses, and many of the functions exported by `Data.Ini.Config.St` expected any generic function of the type `a -> s -> s`, and not a lens specifically. If we didn't want to use lenses, we can still take advantage of this library, albeit in a more verbose way:
 
 ~~~.haskell
 configParser :: IniStParser Config ()
