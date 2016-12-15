@@ -1,5 +1,5 @@
 name:             config-ini
-version:          0.2.0.0
+version:          0.1.2.0
 synopsis:         A library for simple INI-based configuration files.
 homepage:         https://github.com/aisamanra/config-ini
 bug-reports:      https://github.com/aisamanra/config-ini/issues
@@ -34,7 +34,6 @@ flag build-examples
 library
   hs-source-dirs:      src
   exposed-modules:     Data.Ini.Config
-                     , Data.Ini.Config.Lens
                      , Data.Ini.Config.Raw
   ghc-options:         -Wall
   build-depends:       base                  >=4.7 && <4.10
@@ -64,18 +63,6 @@ executable config-example
   build-depends:    base >=4.7 && <4.10
                   , text
                   , config-ini
-  default-language: Haskell2010
-
-executable lens-example
-  if !flag(build-examples)
-    buildable: False
-  hs-source-dirs:   examples/lens-example
-  main-is:          Main.hs
-  ghc-options:      -Wall
-  build-depends:    base >=4.7 && <4.10
-                  , text
-                  , config-ini
-                  , microlens-platform
   default-language: Haskell2010
 
 test-suite test-ini-compat
