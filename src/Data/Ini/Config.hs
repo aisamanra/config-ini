@@ -32,13 +32,21 @@ module Data.Ini.Config
 
 import           Control.Applicative (Applicative(..), Alternative(..))
 import           Control.Monad.Trans.Except
-import qualified Data.HashMap.Strict as HM
 import           Data.Ini.Config.Raw
+import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import           Data.String (IsString(..))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, Proxy(..), typeRep)
 import           Text.Read (readMaybe)
+
+lkp :: Text -> Seq (Text, a) -> Maybe a
+lkp t = go . Seq.viewl
+  where go ((t', x) Seq.:< rs)
+          | t == t'   = Just x
+          | otherwise = go (Seq.viewl rs)
+        go Seq.EmptyL = Nothing
 
 addLineInformation :: Int -> Text -> StParser s a -> StParser s a
 addLineInformation lineNo sec = withExceptT go
@@ -75,7 +83,7 @@ parseIniFile text (IniParser mote) = do
 --   Left "No top-level section named \"TWO\""
 section :: Text -> SectionParser a -> IniParser a
 section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
-  case HM.lookup (T.toLower name) ini of
+  case lkp (T.toLower name) ini of
     Nothing  -> Left ("No top-level section named " ++ show name)
     Just sec -> runExceptT thunk sec
 
@@ -91,7 +99,7 @@ section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 --   Right Nothing
 sectionMb :: Text -> SectionParser a -> IniParser (Maybe a)
 sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
-  case HM.lookup (T.toLower name) ini of
+  case lkp (T.toLower name) ini of
     Nothing  -> return Nothing
     Just sec -> Just `fmap` runExceptT thunk sec
 
@@ -107,7 +115,7 @@ sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 --   Right "def"
 sectionDef :: Text -> a -> SectionParser a -> IniParser a
 sectionDef name def (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
-  case HM.lookup (T.toLower name) ini of
+  case lkp (T.toLower name) ini of
     Nothing  -> return def
     Just sec -> runExceptT thunk sec
 
@@ -121,7 +129,7 @@ getSectionName = ExceptT $ (\ m -> return (isName m))
 
 rawFieldMb :: Text -> StParser IniSection (Maybe IniValue)
 rawFieldMb name = ExceptT $ \m ->
-  return (HM.lookup name (isVals m))
+  return (lkp name (isVals m))
 
 rawField :: Text -> StParser IniSection IniValue
 rawField name = do
@@ -196,7 +204,7 @@ fieldMbOf name parse = SectionParser $ do
 --   Right "def"
 fieldDef :: Text -> Text -> SectionParser Text
 fieldDef name def = SectionParser $ ExceptT $ \m ->
-  case HM.lookup name (isVals m) of
+  case lkp name (isVals m) of
     Nothing -> return def
     Just x  -> return (vValue x)
 
