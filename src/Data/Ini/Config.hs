@@ -5,7 +5,7 @@
 module Data.Ini.Config
 (
 -- $main
--- * Running Parsers
+-- * Parsing Files
   parseIniFile
 -- * Parser Types
 , IniParser
@@ -28,6 +28,7 @@ module Data.Ini.Config
 , number
 , string
 , flag
+, listWithSeparator
 ) where
 
 import           Control.Applicative (Applicative(..), Alternative(..))
@@ -39,6 +40,7 @@ import           Data.String (IsString(..))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, Proxy(..), typeRep)
+import           GHC.Exts (IsList(..))
 import           Text.Read (readMaybe)
 
 lkp :: Text -> Seq (Text, a) -> Maybe a
@@ -279,7 +281,7 @@ readable t = case readMaybe str of
 number :: (Num a, Read a, Typeable a) => Text -> Either String a
 number = readable
 
--- | Convert a textua value to the appropriate string type. This will
+-- | Convert a textual value to the appropriate string type. This will
 --   never fail.
 --
 --   >>> string "foo" :: Either String String
@@ -315,6 +317,30 @@ flag s = case T.toLower s of
   "n"     -> Right False
   _       -> Left ("Unable to parse " ++ show s ++ " as a boolean")
 
+-- | Convert a reader for a value into a reader for a list of those
+--   values, separated by a chosen separator. This will split apart
+--   the string on that separator, get rid of leading and trailing
+--   whitespace on the individual chunks, and then attempt to parse
+--   each of them according to the function provided, turning the
+--   result into a list.
+--
+--   This is overloaded with the "IsList" typeclass, so it can be
+--   used transparently to parse other list-like types.
+--
+--   >>> listWithSeparator "," number "2, 3, 4" :: Either String [Int]
+--   Right [2,3,4]
+--   >>> listWithSeparator " " number "7 8 9" :: Either String [Int]
+--   Right [7,8,9]
+--   >>> listWithSeparator ":" string "/bin:/usr/bin" :: Either String [FilePath]
+--   Right ["/bin","/usr/bin"]
+--   >>> listWithSeparator "," number "7 8 9" :: Either String [Int]
+--   Left "Unable to parse \"2 3 4\" as a value of type Int"
+listWithSeparator :: (IsList l)
+                  => Text
+                  -> (Text -> Either String (Item l))
+                  -> Text -> Either String l
+listWithSeparator sep rd =
+  fmap fromList . mapM (rd . T.strip) . T.splitOn sep
 
 -- $setup
 --

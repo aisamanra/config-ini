@@ -46,6 +46,7 @@ data IniValue = IniValue
     -- ^ Right now, this will never show up in a parsed INI file, but
     --   it's used when emitting a default INI file: it causes the
     --   key-value line to include a leading comment as well.
+  , vDelimiter    :: Char
   } deriving (Eq, Show)
 
 -- | We want to keep track of the whitespace/comments in between KV
@@ -99,9 +100,9 @@ pPairs :: Text
 pPairs name start leading prevs comments pairs = newPair <|> finishedSection
   where
     newPair = do
-      pair <- pPair comments
+      (n, pair) <- pPair comments
       rs <- sBlanks
-      pPairs name start leading prevs rs (pairs Seq.|> (vName pair, pair))
+      pPairs name start leading prevs rs (pairs Seq.|> (n, pair))
     finishedSection = do
       end <- getCurrentLine
       let newSection = IniSection
@@ -113,19 +114,21 @@ pPairs name start leading prevs comments pairs = newPair <|> finishedSection
             }
       pSections comments (prevs Seq.|> (T.toLower name, newSection))
 
-pPair :: Seq BlankLine -> Parser IniValue
+pPair :: Seq BlankLine -> Parser (Text, IniValue)
 pPair leading = do
   pos <- getCurrentLine
   key <- T.pack `fmap` some (noneOf "[]=:")
-  void (oneOf ":=")
+  delim <- oneOf ":="
   val <- T.pack `fmap` manyTill anyChar eol
-  return IniValue
-    { vLineNo       = pos
-    , vName         = T.strip key
-    , vValue        = T.strip val
-    , vComments     = leading
-    , vCommentedOut = False
-    }
+  return ( T.strip key
+         , IniValue
+             { vLineNo       = pos
+             , vName         = key
+             , vValue        = val
+             , vComments     = leading
+             , vCommentedOut = False
+             , vDelimiter    = delim
+             } )
 
 getCurrentLine :: Parser Int
 getCurrentLine = (fromIntegral . unPos . sourceLine) `fmap` getPosition
@@ -147,6 +150,6 @@ printIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromIni
       F.foldMap buildComment (vComments val) <>
       (if vCommentedOut val then Builder.fromString "# " else mempty) <>
       Builder.fromText (vName val) <>
-      Builder.fromString " = " <>
+      Builder.singleton (vDelimiter val) <>
       Builder.fromText (vValue val) <>
       Builder.singleton '\n'

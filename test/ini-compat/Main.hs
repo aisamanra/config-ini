@@ -96,7 +96,7 @@ instance Arbitrary RichIni where
             name <- T.strip `fmap` str
             val  <- str
             cs   <- Seq.fromList `fmap` listOf comment
-            return (name, I2.IniValue 0 name val cs False)
+            return (name, I2.IniValue 0 name val cs False '=')
           comment = oneof [ return I2.BlankLine
                           , do { c <- elements ";#"
                                ; txt <- str
