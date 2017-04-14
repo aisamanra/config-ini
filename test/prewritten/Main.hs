@@ -4,6 +4,7 @@ import           Data.List
 import           Data.Ini.Config.Raw
 import           Data.Sequence (Seq)
 import           Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           System.Directory
 import           System.Exit
@@ -19,10 +20,12 @@ main = do
                  ]
   mapM_ runTest inis
 
-toMaps :: Ini -> Seq (Text, Seq (Text, Text))
+type IniSeq = Seq (Text, Seq (Text, Text))
+
+toMaps :: Ini -> IniSeq
 toMaps (Ini m) = fmap sectionToPair m
   where sectionToPair (name, section) = (name, fmap valueToPair (isVals section))
-        valueToPair (name, value) = (name, vValue value)
+        valueToPair (name, value) = (name, T.strip (vValue value))
 
 runTest :: FilePath -> IO ()
 runTest iniF = do
