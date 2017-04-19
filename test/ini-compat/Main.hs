@@ -1,10 +1,13 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
-import           Data.Char
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Ini as I1
 import qualified Data.Ini.Config.Raw as I2
+import           Data.Monoid
 import           Data.Text (Text)
 import qualified Data.Text as T
 
@@ -28,21 +31,23 @@ lower (I1.Ini hm) =
 toMaps :: I2.Ini -> HashMap Text (HashMap Text Text)
 toMaps (I2.Ini m) = fmap (fmap I2.vValue . I2.isVals) m
 
+type AlphaNumText = T.Text
+instance Arbitrary AlphaNumText where
+    arbitrary = T.pack <$> (listOf1 $ elements $
+                            ['a'..'z'] <> ['A'..'Z'] <> ['0'..'9'] <> [' '])
+
 newtype ArbIni = ArbIni I1.Ini deriving (Show)
 
 instance Arbitrary ArbIni where
   arbitrary = (ArbIni . I1.Ini . HM.fromList) `fmap` listOf sections
     where sections = do
-            name <- str
+            name <- arbitrary :: Gen AlphaNumText
             sec  <- section
             return (name, sec)
-          str = (T.pack `fmap` arbitrary) `suchThat` (\ t ->
-                   T.all (\ c -> isAlphaNum c || c == ' ')
-                   t && not (T.null t))
           section = HM.fromList `fmap` listOf kv
           kv = do
-            name <- str
-            val  <- str
+            name <- arbitrary :: Gen AlphaNumText
+            val  <- arbitrary :: Gen AlphaNumText
             return (name, val)
 
 main :: IO ()
