@@ -56,10 +56,10 @@ toMaps (I2.Ini m) = conv (fmap sectionToPair m)
         valueToPair (name, value) = (T.toLower name, T.strip (I2.vValue value))
         conv = HM.fromList . Fold.toList
 
-textChunk :: Monad m => Gen.Gen m Text
+textChunk :: Monad m => Gen m Text
 textChunk = fmap T.pack $ Gen.list (Range.linear 1 20) $ Gen.alphaNum
 
-mkIni :: Monad m => Gen.Gen m I1.Ini
+mkIni :: Monad m => Gen m I1.Ini
 mkIni = do
   ss <- Gen.list (Range.linear 0 10) $ do
     name <- textChunk
@@ -68,14 +68,14 @@ mkIni = do
     return (name, HM.fromList section)
   return (I1.Ini (HM.fromList ss))
 
-mkComments :: Monad m => Gen.Gen m (Seq.Seq I2.BlankLine)
+mkComments :: Monad m => Gen m (Seq.Seq I2.BlankLine)
 mkComments = fmap (Seq.fromList . nub) $ Gen.list (Range.linear 0 5) $
   Gen.choice
     [ return I2.BlankLine
     , I2.CommentLine <$> Gen.element ";#" <*> textChunk
     ]
 
-mkRichIni :: Monad m => Gen.Gen m I2.Ini
+mkRichIni :: Monad m => Gen m I2.Ini
 mkRichIni = do
   ss <- Gen.list (Range.linear 0 10) $ do
     name <- textChunk
