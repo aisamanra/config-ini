@@ -568,20 +568,21 @@ _2 :: Lens (a, b) (a, b) b b
 _2 = lens snd (\ b (a, _) -> (a, b))
 
 
-{- | $main
-This module is an alternate API used for parsing INI files.
-unlike the standard API, it is bidirectional: it can be also used
-to emit an INI, or even to produce an updated INI file with minimal
-modification to the textual file provided.
+
+{- $main This module is an alternate API used for parsing INI files.
+Unlike the standard API, it is bidirectional: the same declarative
+structure can be also used to emit an INI file, or even to produce an
+updated INI file with minimal modification to the textual file
+provided.
 
 This module makes some extra assumptions about your configuration type
 and the way you interact with it: in particular, it assumes that you
 have lenses for all the fields you're parsing, and that you have some
 kind of sensible default value of that configuration. Instead of
 providing combinators which can extract and parse a field of an INI
-file into a value, the bidirectional API has you declaratively
-associate lenses into your structure with descriptions of their
-corresponding fields in INI files.
+file into a value, the bidirectional API allows you to declaratively
+map lenses into your structure to descriptions of corresponding fields
+in INI files.
 
 Consider the following example INI file:
 
@@ -593,7 +594,8 @@ Consider the following example INI file:
 > user = terry
 
 We'd like to parse this INI file into a @Config@ type which we've
-defined like this, using whatever "lens"-like library we prefer:
+defined like this, using "lens" or a similar library to provide
+lenses:
 
 > data Config = Config
 >   { _cfHost :: String
@@ -603,9 +605,10 @@ defined like this, using whatever "lens"-like library we prefer:
 >
 > ''makeLenses Config
 
-We define a basic specification of type @IniSpec Config ()@ by using
-the provided combinators to declare sections and then associate fields
-in those sections with lenses into our @Config@ structure.
+We can now define a basic specification of the type @IniSpec Config
+()@ by using the provided operations to declare our top-level
+sections, and then within those sections associate fields with lenses
+into our @Config@ structure.
 
 > configSpec :: IniSpec Config ()
 > configSpec = do
@@ -621,8 +624,8 @@ setting that value to 'Nothing' if the field does not appear in the
 configuration. Each 'field' invocation must include the name of the
 field and a representation of the type of that field: 'string',
 'number', and 'text' in the above snippet are all values of type
-'FieldValue', which bundles together a parser and serializer for a
-value.
+'FieldValue', which bundle together a parser and serializer so that
+they can be used bidirectionally.
 
 We can also provide extra metadata about a field, allowing it to be
 skipped in parsing, or to provide an explicit default value, or to
@@ -634,13 +637,24 @@ using the '&' operator:
 > configSpec = do
 >   section "NETWORK" $ do
 >     cfHost .= field "host" string
->                 & comment ["A comment about the host"]
+>                 & comment ["The desired hostname (optional)"]
+>                 & skipIfMissing
 >     cfPost .= field "port" number
+>                 & comment ["The port number"]
 >                 & defaultValue 9999
 >   section "LOCAL" $ do
 >     cfUser .=? field "user" text
 
 In order to parse an INI file, we need to provide a default value of
-our underlying @config@ type on which we can perform our 'Lens'-based
-updates.
+our underlying @Config@ type on which we can perform our 'Lens'-based
+updates. Parsing will then walk the specification and update each
+field in the default value to the field provided in the INI file. We
+can also use a value of our @Config@ type and serialize it directly,
+which is useful for generating a default configuration: this will
+include the comments we've provided and (optionally) commented-out
+key-value pairs representing default values. Finally, we can /update/
+a configuration file, reflecting changes to a value back to an
+existing INI file in a way that preserves incidental structure like
+spacing and comments.
+
 -}
