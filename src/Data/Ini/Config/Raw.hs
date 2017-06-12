@@ -1,8 +1,11 @@
 module Data.Ini.Config.Raw
-( Ini(..)
+( -- $main
+  -- * INI types
+  Ini(..)
 , IniSection(..)
 , IniValue(..)
 , BlankLine(..)
+  -- * serializing and deserializing
 , parseIni
 , printIni
 ) where
@@ -20,27 +23,59 @@ import           Text.Megaparsec
 import           Text.Megaparsec.Text
 
 -- | An 'Ini' value is a mapping from section names to
---   'IniSection' values.
+--   'IniSection' values. The section names in this mapping are
+--   normalized to lower-case and stripped of whitespace. This
+--   sequence retains the ordering of the original source file.
 newtype Ini = Ini
   { fromIni :: Seq (Text, IniSection)
   } deriving (Eq, Show)
 
 -- | An 'IniSection' consists of a name, a mapping of key-value pairs,
---   and metadata about where the section starts and ends in the file.
+--   and metadata about where the section starts and ends in the
+--   file. The section names found in 'isName' are *not* normalized to
+--   lower-case or stripped of whitespace, and thus should appear
+--   exactly as they appear in the original source file.
 data IniSection = IniSection
   { isName      :: Text
+                   -- ^ The name of the section, as it appears in the
+                   -- original INI source
   , isVals      :: Seq (Text, IniValue)
+                   -- ^ The key-value mapping within that section. Key
+                   -- names here are normalized to lower-case and
+                   -- stripped of whitespace. This sequence retains
+                   -- the ordering of the original source file.
   , isStartLine :: Int
+                   -- ^ The line on which the section begins. This
+                   -- field is ignored when serializing, and is only
+                   -- used for error messages produced when parsing
+                   -- and deserializing an INI structure.
   , isEndLine   :: Int
+                   -- ^ The line on which the section ends. This field
+                   -- is ignored when serializing, and is only used
+                   -- for error messages produced when parsing and
+                   -- deserializing an INI structure.
   , isComments  :: Seq BlankLine
+                   -- ^ The blank lines and comments that appear prior
+                   -- to the section head declaration, retained for
+                   -- pretty-printing identical INI files.
   } deriving (Eq, Show)
 
 -- | An 'IniValue' represents a key-value mapping, and also stores the
---   line number where it appears.
+--   line number where it appears. The key names and values found in
+--   'vName' and 'vValue' respectively are _not_ normalized to
+--   lower-case or stripped of whitespace, and thus should appear
+--   exactly as they appear in the original source file.
 data IniValue = IniValue
   { vLineNo       :: Int
+                     -- ^ The line on which the key/value mapping
+                     -- appears. This field is ignored when
+                     -- serializing, and is only used for error
+                     -- messages produced when parsing and
+                     -- deserializing an INI structure.
   , vName         :: Text
+                     -- ^ The name of the key, as it appears in the INI source.
   , vValue        :: Text
+                     -- ^ The value of the key
   , vComments     :: Seq BlankLine
   , vCommentedOut :: Bool
     -- ^ Right now, this will never show up in a parsed INI file, but
@@ -57,7 +92,8 @@ data BlankLine
   | BlankLine
     deriving (Eq, Show)
 
--- | Parse a 'Text' value into an 'Ini' value.
+-- | Parse a 'Text' value into an 'Ini' value, retaining a maximal
+-- amount of structure as needed to reconstruct the original INI file.
 parseIni :: Text -> Either String Ini
 parseIni t = case runParser pIni "ini file" t of
   Left err -> Left (parseErrorPretty err)
@@ -134,6 +170,9 @@ getCurrentLine :: Parser Int
 getCurrentLine = (fromIntegral . unPos . sourceLine) `fmap` getPosition
 
 
+-- | Serialize an INI file to text, complete with any comments which
+-- appear in the INI structure, and retaining the aesthetic details
+-- which are present in the INI file.
 printIni :: Ini -> Text
 printIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromIni
   where
@@ -153,3 +192,7 @@ printIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromIni
       Builder.singleton (vDelimiter val) <>
       Builder.fromText (vValue val) <>
       Builder.singleton '\n'
+
+-- | $main
+-- This module is subject to change in the future, and therefore
+-- should not be relied upon to have a consistent API.
