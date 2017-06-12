@@ -27,8 +27,8 @@ sampleConfig = Config
   , _confConfigFile    = Nothing
   }
 
-parseConfig :: IniSpec Config ()
-parseConfig = section "NETWORK" $ do
+configSpec :: IniSpec Config ()
+configSpec = section "NETWORK" $ do
   confUsername .= field "user" text
     & comment [ "your username" ]
   confPort .= field "port" number
@@ -51,13 +51,13 @@ example = "[NETWORK]\n\
 
 main :: IO ()
 main = do
-  let s = parseIniFile sampleConfig parseConfig example
+  let s = parseIniFile sampleConfig configSpec example
   print s
   case s of
     Left err -> putStrLn err
     Right p  -> do
       putStrLn "------------------------"
-      putStrLn (unpack (emitIniFile sampleConfig parseConfig))
+      putStr (unpack (emitIniFile sampleConfig configSpec))
       putStrLn "------------------------"
       putStrLn "\n"
       let p' = p { _confPort = 9191
@@ -69,10 +69,10 @@ main = do
                         [ "value added by application" ]
                   , updateIgnoreExtraneousFields = False
                   }
-      let up = updateIniFile p' parseConfig example pol
+      let up = updateIniFile p' configSpec example pol
       case up of
         Left err  -> putStrLn err
         Right up' -> do
           putStrLn "------------------------"
-          putStrLn (unpack up')
+          putStr (unpack up')
           putStrLn "------------------------"
