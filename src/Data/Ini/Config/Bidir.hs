@@ -74,15 +74,11 @@ import           Data.Ini.Config.Raw
 --   type alias
 type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 
-lkp :: Text -> Seq (Text, a) -> Maybe a
-lkp t = go . Seq.viewl
-  where go ((t', x) Seq.:< rs)
-          | T.toLower t == T.toLower t' = Just x
-          | otherwise = go (Seq.viewl rs)
-        go Seq.EmptyL = Nothing
+lkp :: NormalizedText -> Seq (NormalizedText, a) -> Maybe a
+lkp t = fmap snd . F.find (\ (t', _) -> t' == t)
 
-rmv :: Text -> Seq (Field s) -> Seq (Field s)
-rmv n = Seq.filter (\ f -> T.toLower (fieldName f) /= T.toLower n)
+rmv :: NormalizedText -> Seq (Field s) -> Seq (Field s)
+rmv n = Seq.filter (\ f -> fieldName f /= n)
 
 -- The & operator is really useful here, but it didn't show up in
 -- earlier versions, so it gets redefined here.
@@ -137,14 +133,14 @@ newtype SectionSpec s a = SectionSpec (BidirM (Field s) a)
 section :: Text -> SectionSpec s () -> IniSpec s ()
 section name (SectionSpec mote) = IniSpec $ do
   let fields = runBidirM mote
-  modify (Seq.|> Section name fields (allOptional fields))
+  modify (Seq.|> Section (normalize name) fields (allOptional fields))
 
 allOptional :: (Seq (Field s)) -> Bool
 allOptional = all isOptional
   where isOptional (Field   _ fd) = fdSkipIfMissing fd
         isOptional (FieldMb _ fd) = fdSkipIfMissing fd
 
-data Section s = Section Text (Seq (Field s)) Bool
+data Section s = Section NormalizedText (Seq (Field s)) Bool
 
 -- | A "Field" is a description of
 data Field s
@@ -152,7 +148,7 @@ data Field s
   | forall a. Eq a => FieldMb (Lens s s (Maybe a) (Maybe a)) (FieldDescription a)
 
 -- convenience accessors for things in a Field
-fieldName :: Field s -> Text
+fieldName :: Field s -> NormalizedText
 fieldName (Field _ FieldDescription { fdName = n }) = n
 fieldName (FieldMb _ FieldDescription { fdName = n }) = n
 
@@ -166,7 +162,7 @@ fieldComment (FieldMb _ FieldDescription { fdComment = n }) = n
 -- well as other metadata that might be needed in the course of
 -- parsing or serializing a structure.
 data FieldDescription t = FieldDescription
-  { fdName          :: Text
+  { fdName          :: NormalizedText
   , fdValue         :: FieldValue t
   , fdComment       :: Seq Text
   , fdDummy         :: Maybe Text
@@ -239,7 +235,7 @@ infixr 0 .=?
 --   values associated with that field.
 field :: Text -> FieldValue a -> FieldDescription a
 field name value = FieldDescription
-  { fdName          = name
+  { fdName          = normalize name
   , fdValue         = value
   , fdComment       = Seq.empty
   , fdDummy         = Nothing
@@ -339,11 +335,11 @@ parseIniFile def (IniSpec mote) t =
 -- yet. Just you wait. This is just the regular part. 'runSpec' is
 -- easy: we walk the spec, and for each section, find the
 -- corresponding section in the INI file and call runFields.
-runSpec :: s -> Seq.ViewL (Section s) -> Seq (Text, IniSection)
+runSpec :: s -> Seq.ViewL (Section s) -> Seq (NormalizedText, IniSection)
         -> Either String s
 runSpec s Seq.EmptyL _ = Right s
 runSpec s (Section name fs opt Seq.:< rest) ini
-  | Just v <- lkp (T.toLower name) ini = do
+  | Just v <- lkp name ini = do
       s' <- runFields s (Seq.viewl fs) v
       runSpec s' (Seq.viewl rest) ini
   | opt = runSpec s (Seq.viewl rest) ini
@@ -391,7 +387,8 @@ runFields s (FieldMb l descr Seq.:< fs) sect
 emitIniFile :: s -> IniSpec s () -> Text
 emitIniFile s (IniSpec mote) =
   let spec = runBidirM mote in
-  printIni $ Ini $ fmap (\ (Section name fs _) -> (name, toSection s name fs)) spec
+  printIni $ Ini $ fmap (\ (Section name fs _) ->
+                           (name, toSection s (actualText name) fs)) spec
 
 mkComments :: Seq Text -> Seq BlankLine
 mkComments comments =
@@ -408,7 +405,7 @@ toSection s name fs = IniSection
             ( fdName descr
             , IniValue
                 { vLineNo = 0
-                , vName   = fdName descr
+                , vName   = actualText (fdName descr)
                 , vValue  = val
                 , vComments = mkComments (fdComment descr)
                 , vCommentedOut = optional
@@ -488,15 +485,15 @@ updateIniFile s (IniSpec mote) t pol =
       ini' <- updateIniSections s ini spec pol
       return (printIni (Ini ini'))
 
-updateIniSections :: s -> Seq (Text, IniSection)
+updateIniSections :: s -> Seq (NormalizedText, IniSection)
                   -> Seq (Section s)
                   -> UpdatePolicy
-                  -> Either String (Seq (Text, IniSection))
+                  -> Either String (Seq (NormalizedText, IniSection))
 updateIniSections s sections fields pol = do
   existingSections <- F.for sections $ \ (name, sec) -> do
     let err  = (Left ("Unexpected top-level section: " ++ show name))
     Section _ spec _ <- maybe err Right
-      (F.find (\ (Section n _ _) -> T.toLower n == name) fields)
+      (F.find (\ (Section n _ _) -> n == name) fields)
     newVals <- updateIniSection s (isVals sec) spec pol
     return (name, sec { isVals = newVals })
   let existingSectionNames = fmap fst existingSections
@@ -504,11 +501,11 @@ updateIniSections s sections fields pol = do
     \ (Section nm spec isOpt) ->
       if nm `elem` existingSectionNames
         then return mempty
-        else return mempty
+        else return (Seq.singleton (nm, IniSection (actualText nm) mempty 0 0 mempty))
   return (existingSections <> F.asum newSections)
 
-updateIniSection :: s -> Seq (Text, IniValue) -> Seq (Field s)
-                 -> UpdatePolicy -> Either String (Seq (Text, IniValue))
+updateIniSection :: s -> Seq (NormalizedText, IniValue) -> Seq (Field s)
+                 -> UpdatePolicy -> Either String (Seq (NormalizedText, IniValue))
 updateIniSection s values fields pol = go (Seq.viewl values) fields
   where go ((t, val) :< vs) fs =
           -- For each field, we need to fetch the description of the
@@ -592,7 +589,7 @@ updateIniSection s values fields pol = go (Seq.viewl values) fields
                   mkComments cs
               val = IniValue
                       { vLineNo       = 0
-                      , vName         = t <> " "
+                      , vName         = actualText t <> " "
                       , vValue        = ""
                       , vComments     = comments
                       , vCommentedOut = False

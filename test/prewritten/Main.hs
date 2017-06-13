@@ -24,8 +24,10 @@ type IniSeq = Seq (Text, Seq (Text, Text))
 
 toMaps :: Ini -> IniSeq
 toMaps (Ini m) = fmap sectionToPair m
-  where sectionToPair (name, section) = (name, fmap valueToPair (isVals section))
-        valueToPair (name, value) = (name, T.strip (vValue value))
+  where sectionToPair (name, section) =
+          (normalizedText name, fmap valueToPair (isVals section))
+        valueToPair (name, value) =
+          (normalizedText name, T.strip (vValue value))
 
 runTest :: FilePath -> IO ()
 runTest iniF = do

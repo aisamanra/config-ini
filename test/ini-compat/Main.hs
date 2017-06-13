@@ -56,8 +56,9 @@ lower (I1.Ini ini) = go (fmap go ini)
 toMaps :: I2.Ini -> HashMap Text (HashMap Text Text)
 toMaps (I2.Ini m) = conv (fmap sectionToPair m)
   where sectionToPair (name, section) =
-          (name, conv (fmap valueToPair (I2.isVals section)))
-        valueToPair (name, value) = (T.toLower name, T.strip (I2.vValue value))
+          (I2.normalizedText name, conv (fmap valueToPair (I2.isVals section)))
+        valueToPair (name, value) =
+          (I2.normalizedText name, T.strip (I2.vValue value))
         conv = HM.fromList . Fold.toList
 
 textChunk :: Monad m => Gen m Text
@@ -87,11 +88,11 @@ mkRichIni = do
       k <- textChunk
       v <- textChunk
       cs <- mkComments
-      return ( T.toLower k
+      return ( I2.normalize k
              , I2.IniValue 0 k v cs False '='
              )
     cs <- mkComments
-    return ( T.toLower name
+    return ( I2.normalize name
            , I2.IniSection name (Seq.fromList (nubBy ((==) `on` fst) section)) 0 0 cs
            )
   return (I2.Ini (Seq.fromList (nubBy ((==) `on` fst) ss)))

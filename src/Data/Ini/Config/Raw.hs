@@ -6,6 +6,8 @@ module Data.Ini.Config.Raw
 , IniSection(..)
 , IniValue(..)
 , BlankLine(..)
+, NormalizedText(..)
+, normalize
   -- * serializing and deserializing
 , parseIni
 , printIni
@@ -23,12 +25,28 @@ import qualified Data.Text.Lazy.Builder as Builder
 import           Text.Megaparsec
 import           Text.Megaparsec.Text
 
+data NormalizedText = NormalizedText
+  { actualText     :: Text
+  , normalizedText :: Text
+  } deriving (Show)
+
+normalize :: Text -> NormalizedText
+normalize t = NormalizedText t (T.toLower (T.strip t))
+
+instance Eq NormalizedText where
+  NormalizedText _ x == NormalizedText _ y =
+    x == y
+
+instance Ord NormalizedText where
+  NormalizedText _ x `compare` NormalizedText _ y =
+    x `compare` y
+
 -- | An 'Ini' value is a mapping from section names to
 --   'IniSection' values. The section names in this mapping are
 --   normalized to lower-case and stripped of whitespace. This
 --   sequence retains the ordering of the original source file.
 newtype Ini = Ini
-  { fromIni :: Seq (Text, IniSection)
+  { fromIni :: Seq (NormalizedText, IniSection)
   } deriving (Eq, Show)
 
 -- | An 'IniSection' consists of a name, a mapping of key-value pairs,
@@ -40,7 +58,7 @@ data IniSection = IniSection
   { isName      :: Text
                    -- ^ The name of the section, as it appears in the
                    -- original INI source
-  , isVals      :: Seq (Text, IniValue)
+  , isVals      :: Seq (NormalizedText, IniValue)
                    -- ^ The key-value mapping within that section. Key
                    -- names here are normalized to lower-case and
                    -- stripped of whitespace. This sequence retains
@@ -114,11 +132,11 @@ sComment = do
   txt <- T.pack `fmap` manyTill anyChar eol
   return (CommentLine c txt)
 
-pSections :: Seq BlankLine -> Seq (Text, IniSection) -> Parser Ini
+pSections :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser Ini
 pSections leading prevs =
   pSection leading prevs <|> (Ini prevs <$ void eof)
 
-pSection :: Seq BlankLine -> Seq (Text, IniSection) -> Parser Ini
+pSection :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser Ini
 pSection leading prevs = do
   start <- getCurrentLine
   void (char '[')
@@ -131,9 +149,9 @@ pSection leading prevs = do
 pPairs :: Text
        -> Int
        -> Seq BlankLine
-       -> Seq (Text, IniSection)
+       -> Seq (NormalizedText, IniSection)
        -> Seq BlankLine
-       -> Seq (Text, IniValue)
+       -> Seq (NormalizedText, IniValue)
        -> Parser Ini
 pPairs name start leading prevs comments pairs = newPair <|> finishedSection
   where
@@ -150,15 +168,15 @@ pPairs name start leading prevs comments pairs = newPair <|> finishedSection
             , isEndLine   = end
             , isComments  = leading
             }
-      pSections comments (prevs Seq.|> (T.toLower name, newSection))
+      pSections comments (prevs Seq.|> (normalize name, newSection))
 
-pPair :: Seq BlankLine -> Parser (Text, IniValue)
+pPair :: Seq BlankLine -> Parser (NormalizedText, IniValue)
 pPair leading = do
   pos <- getCurrentLine
   key <- T.pack `fmap` some (noneOf "[]=:")
   delim <- oneOf ":="
   val <- T.pack `fmap` manyTill anyChar eol
-  return ( T.strip key
+  return ( normalize key
          , IniValue
              { vLineNo       = pos
              , vName         = key
