@@ -124,6 +124,7 @@ pSection leading prevs = do
   void (char '[')
   name <- T.pack `fmap` some (noneOf "[]")
   void (char ']')
+  void eol
   comments <- sBlanks
   pPairs (T.strip name) start leading prevs comments Seq.empty
 
