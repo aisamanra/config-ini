@@ -36,10 +36,10 @@ configSpec = section "NETWORK" $ do
   confPort .= field "port" number
     & comment [ "the port in question" ]
   confUseEncryption .= flag "encryption"
-    & defaultValue True
+    & skipIfMissing
     & comment [ "whether to use encryption (defaults to true)" ]
   confHostname .= field "hostname" text
-    & defaultValue "localhost"
+    & skipIfMissing
     & comment [ "hostname to connect to (optional)" ]
   confConfigFile .=? field "config file" text
     & placeholderValue "<file path>"

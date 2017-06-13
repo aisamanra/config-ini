@@ -24,7 +24,6 @@ module Data.Ini.Config.Bidir
 -- * Section-Level Parsing
 -- $sections
 , section
-, sectionOpt
 -- * Field-Level Parsing
 -- $fields
 , FieldDescription
@@ -33,7 +32,6 @@ module Data.Ini.Config.Bidir
 , field
 , flag
 , comment
-, defaultValue
 , placeholderValue
 , skipIfMissing
 -- * FieldValues
@@ -139,15 +137,12 @@ newtype SectionSpec s a = SectionSpec (BidirM (Field s) a)
 section :: Text -> SectionSpec s () -> IniSpec s ()
 section name (SectionSpec mote) = IniSpec $ do
   let fields = runBidirM mote
-  modify (Seq.|> Section name fields False)
+  modify (Seq.|> Section name fields (allOptional fields))
 
--- | Define the specification of an optional top-level INI section. If
--- this section does not appear in a parsed INI file, then it will be
--- skipped.
-sectionOpt :: Text -> SectionSpec s () -> IniSpec s ()
-sectionOpt name (SectionSpec mote) = IniSpec $ do
-  let fields = runBidirM mote
-  modify (Seq.|> Section name fields True)
+allOptional :: (Seq (Field s)) -> Bool
+allOptional = all isOptional
+  where isOptional (Field   _ fd) = fdSkipIfMissing fd
+        isOptional (FieldMb _ fd) = fdSkipIfMissing fd
 
 data Section s = Section Text (Seq (Field s)) Bool
 
@@ -173,7 +168,6 @@ fieldComment (FieldMb _ FieldDescription { fdComment = n }) = n
 data FieldDescription t = FieldDescription
   { fdName          :: Text
   , fdValue         :: FieldValue t
-  , fdDefault       :: Maybe t
   , fdComment       :: Seq Text
   , fdDummy         :: Maybe Text
   , fdSkipIfMissing :: Bool
@@ -211,13 +205,6 @@ appear before the field.
 comment :: [Text] -> FieldDescription t -> FieldDescription t
 comment cmt fd = fd { fdComment = Seq.fromList cmt }
 
-{- |
-Choose a default value to be used in case of a missing value. This will
-only be used in the case of non-optional fields.
--}
-defaultValue :: t -> FieldDescription t -> FieldDescription t
-defaultValue def fd = fd { fdDefault = Just def }
-
 -- | Choose a placeholder value to be displayed for optional fields.
 --   This is used when serializing an optional Ini field: the
 --   field will appear commented out in the output using the
@@ -254,7 +241,6 @@ field :: Text -> FieldValue a -> FieldDescription a
 field name value = FieldDescription
   { fdName          = name
   , fdValue         = value
-  , fdDefault       = Nothing
   , fdComment       = Seq.empty
   , fdDummy         = Nothing
   , fdSkipIfMissing = False
@@ -392,8 +378,6 @@ runFields s (Field l descr Seq.:< fs) sect
       runFields (set l value s) (Seq.viewl fs) sect
   | fdSkipIfMissing descr =
       runFields s (Seq.viewl fs) sect
-  | Just def <- fdDefault descr =
-      runFields (set l def s) (Seq.viewl fs) sect
   | otherwise = Left ("Unable to find field " ++ show (fdName descr))
 runFields s (FieldMb l descr Seq.:< fs) sect
   | Just v <- lkp (fdName descr) (isVals sect) = do
@@ -435,11 +419,8 @@ toSection s name fs = IniSection
             mkIniValue (fvEmit (fdValue descr) (get l s)) descr False
           toVal (FieldMb l descr) =
             case get l s of
-              Nothing
-                | Just d <- fdDefault descr ->
-                    mkIniValue (fvEmit (fdValue descr) d) descr True
-                | otherwise ->
-                    mkIniValue "" descr True
+              Nothing ->
+                mkIniValue "" descr True
               Just v ->
                 mkIniValue (fvEmit (fdValue descr) v) descr True
 
@@ -511,13 +492,20 @@ updateIniSections :: s -> Seq (Text, IniSection)
                   -> Seq (Section s)
                   -> UpdatePolicy
                   -> Either String (Seq (Text, IniSection))
-updateIniSections s sections fields pol =
-  F.for sections $ \ (name, sec) -> do
+updateIniSections s sections fields pol = do
+  existingSections <- F.for sections $ \ (name, sec) -> do
     let err  = (Left ("Unexpected top-level section: " ++ show name))
     Section _ spec _ <- maybe err Right
       (F.find (\ (Section n _ _) -> T.toLower n == name) fields)
     newVals <- updateIniSection s (isVals sec) spec pol
     return (name, sec { isVals = newVals })
+  let existingSectionNames = fmap fst existingSections
+  newSections <- F.for fields $
+    \ (Section nm spec isOpt) ->
+      if nm `elem` existingSectionNames
+        then return mempty
+        else return mempty
+  return (existingSections <> F.asum newSections)
 
 updateIniSection :: s -> Seq (Text, IniValue) -> Seq (Field s)
                  -> UpdatePolicy -> Either String (Seq (Text, IniValue))
@@ -580,15 +568,13 @@ updateIniSection s values fields pol = go (Seq.viewl values) fields
         -- were left out, but if we have any non-optional fields left
         -- over, then we definitely need to include them.
         go EmptyL fs = return (finish (Seq.viewl fs))
-        finish (f@(Field l descr) :< fs)
-          | or [ updateAddOptionalFields pol
-               , fdDefault descr /= Just (get l s)
-               ]
+        finish (f@(Field l _) :< fs)
+          | updateAddOptionalFields pol
           , Just val <- mkValue (fieldName f) f '=' =
             (fieldName f, val) <| finish (Seq.viewl fs)
           | otherwise = finish (Seq.viewl fs)
         finish (f@(FieldMb _ descr) :< fs)
-          | not (fdSkipIfMissing descr) && fdDefault descr == Nothing
+          | not (fdSkipIfMissing descr)
           , Just val <- mkValue (fieldName f) f '=' =
             (fieldName f, val) <| finish (Seq.viewl fs)
           | updateAddOptionalFields pol
