@@ -1,5 +1,6 @@
 module Data.Ini.Config.Raw
 ( -- $main
+
   -- * INI types
   Ini(..)
 , IniSection(..)
@@ -32,8 +33,8 @@ newtype Ini = Ini
 
 -- | An 'IniSection' consists of a name, a mapping of key-value pairs,
 --   and metadata about where the section starts and ends in the
---   file. The section names found in 'isName' are *not* normalized to
---   lower-case or stripped of whitespace, and thus should appear
+--   file. The section names found in 'isName' are __not__ normalized
+--   to lower-case or stripped of whitespace, and thus should appear
 --   exactly as they appear in the original source file.
 data IniSection = IniSection
   { isName      :: Text
@@ -193,6 +194,9 @@ printIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromIni
       Builder.fromText (vValue val) <>
       Builder.singleton '\n'
 
--- | $main
--- This module is subject to change in the future, and therefore
--- should not be relied upon to have a consistent API.
+{- $main
+
+__Warning!__ This module is subject to change in the future, and therefore should
+not be relied upon to have a consistent API.
+
+-}

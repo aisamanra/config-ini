@@ -9,6 +9,7 @@ module Data.Ini.Config.Bidir
 (
 -- $main
 -- * Parsing, Serializing, and Updating Files
+-- $using
   parseIniFile
 , emitIniFile
 , UpdatePolicy(..)
@@ -16,11 +17,16 @@ module Data.Ini.Config.Bidir
 , defaultUpdatePolicy
 , updateIniFile
 -- * Bidirectional Parser Types
+-- $types
 , IniSpec
 , SectionSpec
 -- * Section-Level Parsing
+-- $sections
 , section
+, sectionOpt
 -- * Field-Level Parsing
+-- $fields
+, FieldDescription
 , (.=)
 , (.=?)
 , field
@@ -30,6 +36,7 @@ module Data.Ini.Config.Bidir
 , placeholderValue
 , skipIfMissing
 -- * FieldValues
+-- $fieldvalues
 , FieldValue(..)
 , text
 , string
@@ -37,7 +44,9 @@ module Data.Ini.Config.Bidir
 , bool
 , readable
 , listWithSeparator
+, pairWithSeparator
 -- * Miscellaneous Helpers
+-- $misc
 , (&)
 , Lens
 ) where
@@ -115,7 +124,7 @@ runBidirM = snd . flip runState Seq.empty
 -- INI-format file in a declarative way. The @s@ parameter represents
 -- the type of a Haskell structure which is being serialized to or
 -- from.
-newtype IniSpec s a = IniSpec (BidirM (Text, Seq (Field s)) a)
+newtype IniSpec s a = IniSpec (BidirM (Section s) a)
   deriving (Functor, Applicative, Monad)
 
 -- | A 'SectionSpec' value represents the structure of a single
@@ -125,16 +134,32 @@ newtype IniSpec s a = IniSpec (BidirM (Text, Seq (Field s)) a)
 newtype SectionSpec s a = SectionSpec (BidirM (Field s) a)
   deriving (Functor, Applicative, Monad)
 
--- |
+-- | Define the specification of a top-level INI section.
 section :: Text -> SectionSpec s () -> IniSpec s ()
 section name (SectionSpec mote) = IniSpec $ do
   let fields = runBidirM mote
-  modify (Seq.|> (name, fields))
+  modify (Seq.|> Section name fields False)
 
+-- | Define the specification of an optional top-level INI section. If
+-- this section does not appear in a parsed INI file, then it will be
+-- skipped.
+sectionOpt :: Text -> SectionSpec s () -> IniSpec s ()
+sectionOpt name (SectionSpec mote) = IniSpec $ do
+  let fields = runBidirM mote
+  modify (Seq.|> Section name fields True)
+
+data Section s = Section Text (Seq (Field s)) Bool
+
+-- | A "Field" is a description of
 data Field s
   = forall a. Eq a => Field (Lens s s a a) (FieldDescription a)
   | forall a. Eq a => FieldMb (Lens s s (Maybe a) (Maybe a)) (FieldDescription a)
 
+-- | A 'FieldDescription' is a declarative representation of the
+-- structure of a field. This includes the name of the field and the
+-- 'FieldValue' used to parse and serialize values of that field, as
+-- well as other metadata that might be needed in the course of
+-- parsing or serializing a structure.
 data FieldDescription t = FieldDescription
   { fdName          :: Text
   , fdValue         :: FieldValue t
@@ -214,7 +239,7 @@ infixr 0 .=?
 
 -- | Create a description of a field by a combination of the name of
 --   the field and a "FieldValue" describing how to parse and emit
---   the
+--   values associated with that field.
 field :: Text -> FieldValue a -> FieldDescription a
 field name value = FieldDescription
   { fdName          = name
@@ -225,13 +250,14 @@ field name value = FieldDescription
   , fdSkipIfMissing = False
   }
 
+-- | Create a description of a 'Bool'-valued field.
 flag :: Text -> FieldDescription Bool
 flag name = field name bool
 
--- | A "FieldValue" implementation for parsing and reading
---   values according to the logic of the "Read" and "Show"
---   instances for that type, providing a convenient
---   human-readable error message if the parsing step fails.
+-- | A "FieldValue" for parsing and serializing values according to
+--   the logic of the "Read" and "Show" instances for that type,
+--   providing a convenient human-readable error message if the
+--   parsing step fails.
 readable :: forall a. (Show a, Read a, Typeable a) => FieldValue a
 readable = FieldValue { fvParse = parse, fvEmit = emit }
   where emit = T.pack . show
@@ -243,19 +269,25 @@ readable = FieldValue { fvParse = parse, fvEmit = emit }
         prx :: Proxy a
         prx = Proxy
 
--- | A "FieldValue" implementation for parsing and reading numeric
---   values according to the logic of the "Read" and "Show"
---   instances for that type.
+-- | Represents a numeric field whose value is parsed according to the
+-- 'Read' implementation for that type, and is serialized according to
+-- the 'Show' implementation for that type.
 number :: (Show a, Read a, Num a, Typeable a) => FieldValue a
 number = readable
 
--- |
+-- | Represents a field whose value is a 'Text' value
 text :: FieldValue Text
 text = FieldValue { fvParse = Right, fvEmit = id }
 
+-- | Represents a field whose value is a 'String' value
 string :: FieldValue String
 string = FieldValue { fvParse = Right . T.unpack, fvEmit = T.pack }
 
+-- | Represents a field whose value is a 'Bool' value. This parser is
+-- case-insensitive, and matches the words @true@, @false@, @yes@, and
+-- @no@, as well as single-letter abbreviations for all of the
+-- above. This will serialize as @true@ for 'True' and @false@ for
+-- 'False'.
 bool :: FieldValue Bool
 bool = FieldValue { fvParse = parse, fvEmit = emit }
   where parse s = case T.toLower s of
@@ -271,10 +303,29 @@ bool = FieldValue { fvParse = parse, fvEmit = emit }
         emit True  = "true"
         emit False = "false"
 
+-- | Represents a field whose value is a sequence of other values
+-- which are delimited by a given string, and whose individual values
+-- are described by another 'FieldValue' value. This uses GHC's
+-- `IsList` typeclass to convert back and forth between sequence
+-- types.
 listWithSeparator :: IsList l => Text -> FieldValue (Item l) -> FieldValue l
 listWithSeparator sep fv = FieldValue
   { fvParse = fmap fromList . mapM (fvParse fv . T.strip) . T.splitOn sep
   , fvEmit  = T.intercalate sep . map (fvEmit fv) . toList
+  }
+
+-- | Represents a field whose value is a pair of two other values
+-- separated by a given string, whose individual values are described
+-- by two different 'FieldValue' values.
+pairWithSeparator :: FieldValue l -> Text -> FieldValue r -> FieldValue (l, r)
+pairWithSeparator left sep right = FieldValue
+  { fvParse = \ t ->
+      let (leftChunk, rightChunk) = T.breakOn sep t
+      in do
+        x <- fvParse left leftChunk
+        y <- fvParse right rightChunk
+        return (x, y)
+  , fvEmit = \ (x, y) -> fvEmit left x <> sep <> fvEmit right y
   }
 
 -- | Provided an initial value and an 'IniSpec' describing the
@@ -292,13 +343,14 @@ parseIniFile def (IniSpec mote) t =
 -- yet. Just you wait. This is just the regular part. 'runSpec' is
 -- easy: we walk the spec, and for each section, find the
 -- corresponding section in the INI file and call runFields.
-runSpec :: s -> Seq.ViewL (Text, Seq (Field s)) -> Seq (Text, IniSection)
+runSpec :: s -> Seq.ViewL (Section s) -> Seq (Text, IniSection)
         -> Either String s
 runSpec s Seq.EmptyL _ = Right s
-runSpec s ((name, fs) Seq.:< rest) ini
+runSpec s (Section name fs opt Seq.:< rest) ini
   | Just v <- lkp (T.toLower name) ini = do
       s' <- runFields s (Seq.viewl fs) v
       runSpec s' (Seq.viewl rest) ini
+  | opt = runSpec s (Seq.viewl rest) ini
   | otherwise = Left ("Unable to find section " ++ show name)
 
 -- These are some inline reimplementations of "lens" operators. We
@@ -328,6 +380,8 @@ runFields s (Field l descr Seq.:< fs) sect
   | Just v <- lkp (fdName descr) (isVals sect) = do
       value <- fvParse (fdValue descr) (T.strip (vValue v))
       runFields (set l value s) (Seq.viewl fs) sect
+  | fdSkipIfMissing descr =
+      runFields s (Seq.viewl fs) sect
   | Just def <- fdDefault descr =
       runFields (set l def s) (Seq.viewl fs) sect
   | otherwise = Left ("Unable to find field " ++ show (fdName descr))
@@ -343,7 +397,7 @@ runFields s (FieldMb l descr Seq.:< fs) sect
 emitIniFile :: s -> IniSpec s () -> Text
 emitIniFile s (IniSpec mote) =
   let spec = runBidirM mote in
-  printIni $ Ini $ fmap (\ (name, fs) -> (name, toSection s name fs)) spec
+  printIni $ Ini $ fmap (\ (Section name fs _) -> (name, toSection s name fs)) spec
 
 mkComments :: Seq Text -> Seq BlankLine
 mkComments comments =
@@ -444,13 +498,14 @@ updateIniFile s (IniSpec mote) t pol =
       return (printIni (Ini ini'))
 
 updateIniSections :: s -> Seq (Text, IniSection)
-                  -> Seq (Text, Seq (Field s))
+                  -> Seq (Section s)
                   -> UpdatePolicy
                   -> Either String (Seq (Text, IniSection))
 updateIniSections s sections fields pol =
   F.for sections $ \ (name, sec) -> do
     let err  = (Left ("Unexpected top-level section: " ++ show name))
-    spec <- maybe err Right (lkp name fields)
+    Section _ spec _ <- maybe err Right
+      (F.find (\ (Section n _ _) -> n == name) fields)
     newVals <- updateIniSection s (isVals sec) spec pol
     return (name, sec { isVals = newVals })
 
@@ -569,20 +624,23 @@ _2 = lens snd (\ b (a, _) -> (a, b))
 
 
 
-{- $main This module is an alternate API used for parsing INI files.
-Unlike the standard API, it is bidirectional: the same declarative
-structure can be also used to emit an INI file, or even to produce an
-updated INI file with minimal modification to the textual file
-provided.
+{- $main
 
-This module makes some extra assumptions about your configuration type
-and the way you interact with it: in particular, it assumes that you
-have lenses for all the fields you're parsing, and that you have some
-kind of sensible default value of that configuration. Instead of
-providing combinators which can extract and parse a field of an INI
-file into a value, the bidirectional API allows you to declaratively
-map lenses into your structure to descriptions of corresponding fields
-in INI files.
+This module presents an alternate API for parsing INI files.  Unlike
+the standard API, it is bidirectional: the same declarative structure
+can be used to parse an INI file to a value, serialize an INI file
+from a value, or even /update/ an INI file by comparing it against a
+value and serializing in a way that minimizes the differences between
+revisions of the file.
+
+This API does make some extra assumptions about your configuration
+type and the way you interact with it: in particular, it assumes that
+you have lenses for all the fields you're parsing, and that you have
+some kind of sensible default value of that configuration
+type. Instead of providing combinators which can extract and parse a
+field of an INI file into a value, the bidirectional API allows you to
+declaratively associate a lens into your structure with a field of the
+INI file.
 
 Consider the following example INI file:
 
@@ -605,27 +663,37 @@ lenses:
 >
 > ''makeLenses Config
 
-We can now define a basic specification of the type @IniSpec Config
+We can now define a basic specification of the type @'IniSpec' Config
 ()@ by using the provided operations to declare our top-level
 sections, and then within those sections associate fields with lenses
 into our @Config@ structure.
 
-> configSpec :: IniSpec Config ()
-> configSpec = do
->   section "NETWORK" $ do
->     cfHost .= field "host" string
->     cfPost .= field "port" number
->   section "LOCAL" $ do
->     cfUser .=? field "user" text
+@
+'configSpec' :: 'IniSpec' Config ()
+'configSpec' = do
+  'section' \"NETWORK\" $ do
+    cfHost '.=' 'field' \"host\" 'string'
+    cfPost '.=' 'field' \"port\" 'number'
+  'section' \"LOCAL\" $ do
+    cfUser '.=?' 'field' \"user\" 'text'
+@
 
-The '.=' operator associates a field with a lens directly, and the
-'.=?' operator associates a field with a lens to a 'Maybe' value,
-setting that value to 'Nothing' if the field does not appear in the
-configuration. Each 'field' invocation must include the name of the
-field and a representation of the type of that field: 'string',
-'number', and 'text' in the above snippet are all values of type
-'FieldValue', which bundle together a parser and serializer so that
-they can be used bidirectionally.
+There are two operators used to associate lenses with fields:
+
+['.='] Associates a lens of type @Lens' s a@ with a field description
+       of type @FieldDescription a@
+
+['.=?'] Associates a lens of type @Lens' s (Maybe a)@ with a field
+        description of type @FieldDescription a@. If the value does
+        not appear in an INI file, then the lens will be set to
+        'Nothing'; similarly, if the value is 'Nothing', then the
+        field will not be serialized in the file.
+
+Each field must include the field's name as well as a 'FieldValue',
+which describes how to both parse and serialize a value of a given
+type. Several built-in 'FieldValue' descriptions are provided, but you
+can always build your own by providing parsing and serialization
+functions for individual fields.
 
 We can also provide extra metadata about a field, allowing it to be
 skipped in parsing, or to provide an explicit default value, or to
@@ -633,17 +701,19 @@ include an explanatory comment for that value to be used when we
 serialize an INI file. These are conventionally applied to the field
 using the '&' operator:
 
-> configSpec :: IniSpec Config ()
-> configSpec = do
->   section "NETWORK" $ do
->     cfHost .= field "host" string
->                 & comment ["The desired hostname (optional)"]
->                 & skipIfMissing
->     cfPost .= field "port" number
->                 & comment ["The port number"]
->                 & defaultValue 9999
->   section "LOCAL" $ do
->     cfUser .=? field "user" text
+@
+configSpec :: 'IniSpec' Config ()
+configSpec = do
+  'section' \"NETWORK\" $ do
+    cfHost '.=' 'field' \"host\" 'string'
+                & 'comment' [\"The desired hostname (optional)\"]
+                & 'skipIfMissing'
+    cfPost '.=' 'field' \"port\" 'number'
+                & 'comment' [\"The port number\"]
+                & 'defaultValue' 9999
+  'section' \"LOCAL\" $ do
+    cfUser '.=?' 'field' \"user\" 'text'
+@
 
 In order to parse an INI file, we need to provide a default value of
 our underlying @Config@ type on which we can perform our 'Lens'-based
@@ -658,3 +728,26 @@ existing INI file in a way that preserves incidental structure like
 spacing and comments.
 
 -}
+
+-- $using
+-- Functions for parsing, serializing, and updating INI files.
+
+-- $types
+-- Types which represent declarative specifications for INI
+-- file structure.
+
+-- $sections
+-- Declaring sections of an INI file specification
+
+-- $fields
+-- Declaring individual fields of an INI file specification.
+
+-- $fieldvalues
+-- Values of type 'FieldValue' represent both a parser and a
+-- serializer for a value of a given type. It's possible to manually
+-- create 'FieldValue' descriptions, but for simple configurations,
+-- but for the sake of convenience, several commonly-needed
+-- varieties of 'FieldValue' are defined here.
+
+-- $misc
+-- These values and types are exported for compatibility.

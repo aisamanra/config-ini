@@ -14,6 +14,7 @@ data Config = Config
   , _confUseEncryption :: Bool
   , _confHostname      :: Text
   , _confConfigFile    :: Maybe Text
+  , _confPath          :: [Text]
   } deriving (Eq, Show)
 
 makeLenses ''Config
@@ -25,6 +26,7 @@ sampleConfig = Config
   , _confUseEncryption = True
   , _confHostname      = "localhost"
   , _confConfigFile    = Nothing
+  , _confPath          = ["/bin"]
   }
 
 configSpec :: IniSpec Config ()
@@ -41,13 +43,17 @@ configSpec = section "NETWORK" $ do
     & comment [ "hostname to connect to (optional)" ]
   confConfigFile .=? field "config file" text
     & placeholderValue "<file path>"
+  confPath .= field "path" (listWithSeparator ":" text)
+    & skipIfMissing
+    & comment [ "a colon-separated path list" ]
 
 example :: Text
 example = "[NETWORK]\n\
           \# this contains a comment\n\
           \; and a semicolon comment\n\
           \user: gdritter\n\
-          \port: 8888\n"
+          \port: 8888\n\
+          \path= /bin:/usr/bin\n"
 
 main :: IO ()
 main = do
@@ -62,6 +68,7 @@ main = do
       putStrLn "\n"
       let p' = p { _confPort = 9191
                  , _confHostname = "argl"
+                 , _confPath = "/usr/sbin" : _confPath p
                  }
       let pol = defaultUpdatePolicy
                   { updateGeneratedCommentPolicy =
