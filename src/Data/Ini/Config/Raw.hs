@@ -207,8 +207,8 @@ normalizeSectionName = T.toLower . T.strip
 normalizeKey :: Text -> Text
 normalizeKey = normalizeSectionName
 
--- | Look up an Ini value by section name and key. Returns Nothing if
--- either the section or key could not be found.
+-- | Look up an Ini value by section name and key. Returns the sequence
+-- of matches.
 lookupInSection :: Text
                 -- ^ The section name. Will be normalized prior to
                 -- comparison.
@@ -218,29 +218,28 @@ lookupInSection :: Text
                 -- ^ The Ini to search.
                 -> Seq.Seq Text
 lookupInSection sec opt ini =
-    vValue <$> snd <$> (F.asum (lookupValue opt <$> snd <$> lookupSection sec ini))
+    vValue <$> (F.asum (lookupValue opt <$> lookupSection sec ini))
 
 -- | Look up an Ini section by name. Returns a sequence of all matching
--- section records along with their normalized names.
+-- section records.
 lookupSection :: Text
               -- ^ The section name. Will be normalized prior to
               -- comparison.
               -> Ini
               -- ^ The Ini to search.
-              -> Seq.Seq (Text, IniSection)
+              -> Seq.Seq IniSection
 lookupSection name ini =
-    Seq.filter ((== normalizeSectionName name) . fst) $ fromIni ini
+    snd <$> (Seq.filter ((== normalizeSectionName name) . fst) $ fromIni ini)
 
 -- | Look up an Ini key's value in a given section by the key. Returns
--- Nothing if the key could not be found. Otherwise returns the IniValue
--- and its normalized name.
+-- the sequence of matches.
 lookupValue :: Text
             -- ^ The key. Will be normalized prior to comparison.
             -> IniSection
             -- ^ The section to search.
-            -> Seq.Seq (Text, IniValue)
+            -> Seq.Seq IniValue
 lookupValue name section =
-    Seq.filter ((== normalizeKey name) . fst) (isVals section)
+    snd <$> Seq.filter ((== normalizeKey name) . fst) (isVals section)
 
 {- $main
 
