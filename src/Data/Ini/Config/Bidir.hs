@@ -69,7 +69,11 @@ import           Text.Read (readMaybe)
 
 import           Data.Ini.Config.Raw
 
--- | This is a "lens"-compatible type alias
+-- * Utility functions
+
+-- | This is a
+--   <https://hackage.haskell.org/package/lens lens>-compatible
+--   type alias
 type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 
 lkp :: Text -> Seq (Text, a) -> Maybe a
@@ -82,14 +86,8 @@ lkp t = go . Seq.viewl
 rmv :: Text -> Seq (Field s) -> Seq (Field s)
 rmv n = Seq.filter (\ f -> T.toLower (fieldName f) /= T.toLower n)
 
-fieldName :: Field s -> Text
-fieldName (Field _ FieldDescription { fdName = n }) = n
-fieldName (FieldMb _ FieldDescription { fdName = n }) = n
-
-fieldComment :: Field s -> Seq Text
-fieldComment (Field _ FieldDescription { fdComment = n }) = n
-fieldComment (FieldMb _ FieldDescription { fdComment = n }) = n
-
+-- The & operator is really useful here, but it didn't show up in
+-- earlier versions, so it gets redefined here.
 #if __GLASGOW_HASKELL__ < 710
 {- | '&' is a reverse application operator. This provides notational
      convenience. Its precedence is one higher than that of the
@@ -99,6 +97,8 @@ fieldComment (FieldMb _ FieldDescription { fdComment = n }) = n
 a & f = f a
 infixl 1 &
 #endif
+
+-- * Type definitions
 
 -- | A value of type "FieldValue" packages up a parser and emitter
 --   function into a single value. These are used for bidirectional
@@ -155,6 +155,15 @@ data Section s = Section Text (Seq (Field s)) Bool
 data Field s
   = forall a. Eq a => Field (Lens s s a a) (FieldDescription a)
   | forall a. Eq a => FieldMb (Lens s s (Maybe a) (Maybe a)) (FieldDescription a)
+
+-- convenience accessors for things in a Field
+fieldName :: Field s -> Text
+fieldName (Field _ FieldDescription { fdName = n }) = n
+fieldName (FieldMb _ FieldDescription { fdName = n }) = n
+
+fieldComment :: Field s -> Seq Text
+fieldComment (Field _ FieldDescription { fdComment = n }) = n
+fieldComment (FieldMb _ FieldDescription { fdComment = n }) = n
 
 -- | A 'FieldDescription' is a declarative representation of the
 -- structure of a field. This includes the name of the field and the
@@ -417,7 +426,7 @@ toSection s name fs = IniSection
                 { vLineNo = 0
                 , vName   = fdName descr
                 , vValue  = val
-                , vComments = BlankLine <| mkComments (fdComment descr)
+                , vComments = mkComments (fdComment descr)
                 , vCommentedOut = optional
                 , vDelimiter = '='
                 }
@@ -506,7 +515,7 @@ updateIniSections s sections fields pol =
   F.for sections $ \ (name, sec) -> do
     let err  = (Left ("Unexpected top-level section: " ++ show name))
     Section _ spec _ <- maybe err Right
-      (F.find (\ (Section n _ _) -> n == name) fields)
+      (F.find (\ (Section n _ _) -> T.toLower n == name) fields)
     newVals <- updateIniSection s (isVals sec) spec pol
     return (name, sec { isVals = newVals })
 
@@ -653,8 +662,9 @@ Consider the following example INI file:
 > user = terry
 
 We'd like to parse this INI file into a @Config@ type which we've
-defined like this, using "lens" or a similar library to provide
-lenses:
+defined like this, using
+<https://hackage.haskell.org/package/lens lens> or a similar library
+to provide lenses:
 
 > data Config = Config
 >   { _cfHost :: String
