@@ -8,6 +8,7 @@
 module Data.Ini.Config.Bidir
 (
 -- $main
+
 -- * Parsing, Serializing, and Updating Files
 -- $using
   parseIniFile
@@ -674,7 +675,7 @@ into our @Config@ structure.
   'section' \"NETWORK\" $ do
     cfHost '.=' 'field' \"host\" 'string'
     cfPost '.=' 'field' \"port\" 'number'
-  'section' \"LOCAL\" $ do
+  'sectionOpt' \"LOCAL\" $ do
     cfUser '.=?' 'field' \"user\" 'text'
 @
 
@@ -711,7 +712,7 @@ configSpec = do
     cfPost '.=' 'field' \"port\" 'number'
                 & 'comment' [\"The port number\"]
                 & 'defaultValue' 9999
-  'section' \"LOCAL\" $ do
+  'sectionOpt' \"LOCAL\" $ do
     cfUser '.=?' 'field' \"user\" 'text'
 @
 
