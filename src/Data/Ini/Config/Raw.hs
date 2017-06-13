@@ -9,6 +9,10 @@ module Data.Ini.Config.Raw
   -- * serializing and deserializing
 , parseIni
 , printIni
+  -- * inspection
+, lookupInSection
+, lookupSection
+, lookupValue
 ) where
 
 import           Control.Monad (void)
@@ -194,6 +198,49 @@ printIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromIni
       Builder.singleton (vDelimiter val) <>
       Builder.fromText (vValue val) <>
       Builder.singleton '\n'
+
+-- | Normalize a section name.
+normalizeSectionName :: Text -> Text
+normalizeSectionName = T.toLower . T.strip
+
+-- | Normalize a key.
+normalizeKey :: Text -> Text
+normalizeKey = normalizeSectionName
+
+-- | Look up an Ini value by section name and key. Returns Nothing if
+-- either the section or key could not be found.
+lookupInSection :: Text
+                -- ^ The section name. Will be normalized prior to
+                -- comparison.
+                -> Text
+                -- ^ The key. Will be normalized prior to comparison.
+                -> Ini
+                -- ^ The Ini to search.
+                -> Seq.Seq Text
+lookupInSection sec opt ini =
+    vValue <$> snd <$> (F.asum (lookupValue opt <$> snd <$> lookupSection sec ini))
+
+-- | Look up an Ini section by name. Returns a sequence of all matching
+-- section records along with their normalized names.
+lookupSection :: Text
+              -- ^ The section name. Will be normalized prior to
+              -- comparison.
+              -> Ini
+              -- ^ The Ini to search.
+              -> Seq.Seq (Text, IniSection)
+lookupSection name ini =
+    Seq.filter ((== normalizeSectionName name) . fst) $ fromIni ini
+
+-- | Look up an Ini key's value in a given section by the key. Returns
+-- Nothing if the key could not be found. Otherwise returns the IniValue
+-- and its normalized name.
+lookupValue :: Text
+            -- ^ The key. Will be normalized prior to comparison.
+            -> IniSection
+            -- ^ The section to search.
+            -> Seq.Seq (Text, IniValue)
+lookupValue name section =
+    Seq.filter ((== normalizeKey name) . fst) (isVals section)
 
 {- $main
 
