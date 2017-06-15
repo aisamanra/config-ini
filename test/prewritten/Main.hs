@@ -22,8 +22,8 @@ main = do
 
 type IniSeq = Seq (Text, Seq (Text, Text))
 
-toMaps :: Ini -> IniSeq
-toMaps (Ini m) = fmap sectionToPair m
+toMaps :: RawIni -> IniSeq
+toMaps (RawIni m) = fmap sectionToPair m
   where sectionToPair (name, section) =
           (normalizedText name, fmap valueToPair (isVals section))
         valueToPair (name, value) =
@@ -34,7 +34,7 @@ runTest iniF = do
   let hsF = take (length iniF - 4) iniF ++ ".hs"
   ini <- T.readFile (dir ++ "/" ++ iniF)
   hs  <- readFile (dir ++ "/" ++ hsF)
-  case parseIni ini of
+  case parseRawIni ini of
     Left err -> do
       putStrLn ("Error parsing " ++ iniF)
       putStrLn err

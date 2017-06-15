@@ -29,46 +29,47 @@ sampleConfig = Config
   , _confPath          = ["/bin"]
   }
 
-configSpec :: IniSpec Config ()
-configSpec = section "NETWORK" $ do
-  confUsername .= field "user" text
-    & comment [ "your username" ]
-  confPort .= field "port" number
-    & comment [ "the port in question" ]
-  confUseEncryption .= flag "encryption"
-    & skipIfMissing
-    & comment [ "whether to use encryption (defaults to true)" ]
-  confHostname .= field "hostname" text
-    & skipIfMissing
-    & comment [ "hostname to connect to (optional)" ]
-  confConfigFile .=? field "config file" text
-    & placeholderValue "<file path>"
-  confPath .= field "path" (listWithSeparator ":" text)
-    & skipIfMissing
-    & comment [ "a colon-separated path list" ]
+configSpec :: Ini Config
+configSpec = ini sampleConfig $ do
+  section "NETWORK" $ do
+    confUsername .= field "user" text
+      & comment [ "your username" ]
+    confPort .= field "port" number
+      & comment [ "the port in question" ]
+    confUseEncryption .= flag "encryption"
+      & skipIfMissing
+      & comment [ "whether to use encryption (defaults to true)" ]
+    confHostname .= field "hostname" text
+      & skipIfMissing
+      & comment [ "hostname to connect to (optional)" ]
+    confConfigFile .=? field "config file" text
+      & placeholderValue "<file path>"
+  section "LOCAL" $ do
+    confPath .= field "path" (listWithSeparator ":" text)
+      & skipIfMissing
+      & comment [ "a colon-separated path list" ]
 
 example :: Text
 example = "[NETWORK]\n\
           \# this contains a comment\n\
           \; and a semicolon comment\n\
           \user: gdritter\n\
-          \port: 8888\n\
-          \path= /bin:/usr/bin\n"
+          \port: 8888\n"
 
 main :: IO ()
 main = do
-  let s = parseIniFile sampleConfig configSpec example
-  print s
+  let s = parseIni example configSpec
   case s of
     Left err -> putStrLn err
     Right p  -> do
+      let v = getIniValue p
+      print v
       putStrLn "------------------------"
-      putStr (unpack (emitIniFile sampleConfig configSpec))
+      putStr (unpack (getIniText configSpec))
       putStrLn "------------------------"
-      putStrLn "\n"
-      let p' = p { _confPort = 9191
+      let v' = v { _confPort = 9191
                  , _confHostname = "argl"
-                 , _confPath = "/usr/sbin" : _confPath p
+                 , _confPath = "/usr/sbin" : _confPath v
                  }
       let pol = defaultUpdatePolicy
                   { updateGeneratedCommentPolicy =
@@ -76,10 +77,7 @@ main = do
                         [ "value added by application" ]
                   , updateIgnoreExtraneousFields = False
                   }
-      let up = updateIniFile p' configSpec example pol
-      case up of
-        Left err  -> putStrLn err
-        Right up' -> do
-          putStrLn "------------------------"
-          putStr (unpack up')
-          putStrLn "------------------------"
+      let up = getIniText $ updateIni v' $ setIniUpdatePolicy pol p
+      putStrLn "------------------------"
+      putStr (unpack up)
+      putStrLn "------------------------"

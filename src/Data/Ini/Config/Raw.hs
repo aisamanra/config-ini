@@ -2,15 +2,15 @@ module Data.Ini.Config.Raw
 ( -- $main
 
   -- * INI types
-  Ini(..)
+  RawIni(..)
 , IniSection(..)
 , IniValue(..)
 , BlankLine(..)
 , NormalizedText(..)
 , normalize
   -- * serializing and deserializing
-, parseIni
-, printIni
+, parseRawIni
+, printRawIni
 ) where
 
 import           Control.Monad (void)
@@ -45,8 +45,8 @@ instance Ord NormalizedText where
 --   'IniSection' values. The section names in this mapping are
 --   normalized to lower-case and stripped of whitespace. This
 --   sequence retains the ordering of the original source file.
-newtype Ini = Ini
-  { fromIni :: Seq (NormalizedText, IniSection)
+newtype RawIni = RawIni
+  { fromRawIni :: Seq (NormalizedText, IniSection)
   } deriving (Eq, Show)
 
 -- | An 'IniSection' consists of a name, a mapping of key-value pairs,
@@ -113,12 +113,12 @@ data BlankLine
 
 -- | Parse a 'Text' value into an 'Ini' value, retaining a maximal
 -- amount of structure as needed to reconstruct the original INI file.
-parseIni :: Text -> Either String Ini
-parseIni t = case runParser pIni "ini file" t of
+parseRawIni :: Text -> Either String RawIni
+parseRawIni t = case runParser pIni "ini file" t of
   Left err -> Left (parseErrorPretty err)
   Right v  -> Right v
 
-pIni :: Parser Ini
+pIni :: Parser RawIni
 pIni = do
   leading <- sBlanks
   pSections leading Seq.empty
@@ -132,11 +132,11 @@ sComment = do
   txt <- T.pack `fmap` manyTill anyChar eol
   return (CommentLine c txt)
 
-pSections :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser Ini
+pSections :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser RawIni
 pSections leading prevs =
-  pSection leading prevs <|> (Ini prevs <$ void eof)
+  pSection leading prevs <|> (RawIni prevs <$ void eof)
 
-pSection :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser Ini
+pSection :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser RawIni
 pSection leading prevs = do
   start <- getCurrentLine
   void (char '[')
@@ -152,7 +152,7 @@ pPairs :: Text
        -> Seq (NormalizedText, IniSection)
        -> Seq BlankLine
        -> Seq (NormalizedText, IniValue)
-       -> Parser Ini
+       -> Parser RawIni
 pPairs name start leading prevs comments pairs = newPair <|> finishedSection
   where
     newPair = do
@@ -193,8 +193,8 @@ getCurrentLine = (fromIntegral . unPos . sourceLine) `fmap` getPosition
 -- | Serialize an INI file to text, complete with any comments which
 -- appear in the INI structure, and retaining the aesthetic details
 -- which are present in the INI file.
-printIni :: Ini -> Text
-printIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromIni
+printRawIni :: RawIni -> Text
+printRawIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromRawIni
   where
     build (_, ini) =
       F.foldMap buildComment (isComments ini) <>

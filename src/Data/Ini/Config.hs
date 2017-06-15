@@ -60,7 +60,7 @@ type StParser s a = ExceptT String ((->) s) a
 
 -- | An 'IniParser' value represents a computation for parsing entire
 --   INI-format files.
-newtype IniParser a = IniParser (StParser Ini a)
+newtype IniParser a = IniParser (StParser RawIni a)
   deriving (Functor, Applicative, Alternative, Monad)
 
 -- | A 'SectionParser' value represents a computation for parsing a single
@@ -71,7 +71,7 @@ newtype SectionParser a = SectionParser (StParser IniSection a)
 -- | Parse a 'Text' value as an INI file and run an 'IniParser' over it
 parseIniFile :: Text -> IniParser a -> Either String a
 parseIniFile text (IniParser mote) = do
-  ini <- parseIni text
+  ini <- parseRawIni text
   runExceptT mote ini
 
 -- | Find a named section in the INI file and parse it with the provided
@@ -84,7 +84,7 @@ parseIniFile text (IniParser mote) = do
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ section "TWO" (field "x")
 --   Left "No top-level section named \"TWO\""
 section :: Text -> SectionParser a -> IniParser a
-section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
+section name (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
   case lkp (normalize name) ini of
     Nothing  -> Left ("No top-level section named " ++ show name)
     Just sec -> runExceptT thunk sec
@@ -100,7 +100,7 @@ section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionMb "TWO" (field "x")
 --   Right Nothing
 sectionMb :: Text -> SectionParser a -> IniParser (Maybe a)
-sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
+sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
   case lkp (normalize name) ini of
     Nothing  -> return Nothing
     Just sec -> Just `fmap` runExceptT thunk sec
@@ -116,7 +116,7 @@ sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionDef "TWO" "def" (field "x")
 --   Right "def"
 sectionDef :: Text -> a -> SectionParser a -> IniParser a
-sectionDef name def (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
+sectionDef name def (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
   case lkp (normalize name) ini of
     Nothing  -> return def
     Just sec -> runExceptT thunk sec

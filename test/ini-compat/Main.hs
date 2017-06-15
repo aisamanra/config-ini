@@ -25,7 +25,7 @@ propIniEquiv = property $ do
   raw <- forAll mkIni
   let printed = I1.printIniWith I1.defaultWriteIniSettings raw
       i1 = I1.parseIni printed
-      i2 = I2.parseIni printed
+      i2 = I2.parseRawIni printed
   case (i1, i2) of
    (Right i1', Right i2') ->
      let i1'' = lower i1'
@@ -36,9 +36,9 @@ propIniEquiv = property $ do
 propRevIniEquiv :: Property
 propRevIniEquiv = property $ do
   raw <- forAll mkRichIni
-  let printed = I2.printIni raw
+  let printed = I2.printRawIni raw
       i1 = I1.parseIni printed
-      i2 = I2.parseIni printed
+      i2 = I2.parseRawIni printed
   case (i1, i2) of
    (Right i1', Right i2') ->
      lower i1' === toMaps i2'
@@ -47,14 +47,14 @@ propRevIniEquiv = property $ do
 propIniSelfEquiv :: Property
 propIniSelfEquiv = property $ do
   raw <- forAll mkRichIni
-  Right (toMaps raw) === fmap toMaps (I2.parseIni (I2.printIni raw))
+  Right (toMaps raw) === fmap toMaps (I2.parseRawIni (I2.printRawIni raw))
 
 lower :: I1.Ini -> HashMap Text (HashMap Text Text)
 lower (I1.Ini ini) = go (fmap go ini)
   where go hm = HM.fromList [ (T.toLower k, v) | (k, v) <- HM.toList hm ]
 
-toMaps :: I2.Ini -> HashMap Text (HashMap Text Text)
-toMaps (I2.Ini m) = conv (fmap sectionToPair m)
+toMaps :: I2.RawIni -> HashMap Text (HashMap Text Text)
+toMaps (I2.RawIni m) = conv (fmap sectionToPair m)
   where sectionToPair (name, section) =
           (I2.normalizedText name, conv (fmap valueToPair (I2.isVals section)))
         valueToPair (name, value) =
@@ -80,7 +80,7 @@ mkComments = fmap Seq.fromList $ Gen.list (Range.linear 0 5) $
     , I2.CommentLine <$> Gen.element ";#" <*> textChunk
     ]
 
-mkRichIni :: Monad m => Gen m I2.Ini
+mkRichIni :: Monad m => Gen m I2.RawIni
 mkRichIni = do
   ss <- Gen.list (Range.linear 0 100) $ do
     name <- textChunk
@@ -95,7 +95,7 @@ mkRichIni = do
     return ( I2.normalize name
            , I2.IniSection name (Seq.fromList (nubBy ((==) `on` fst) section)) 0 0 cs
            )
-  return (I2.Ini (Seq.fromList (nubBy ((==) `on` fst) ss)))
+  return (I2.RawIni (Seq.fromList (nubBy ((==) `on` fst) ss)))
 
 main :: IO ()
 main = do

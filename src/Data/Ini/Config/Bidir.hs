@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module Data.Ini.Config.Bidir
 (
@@ -11,19 +12,28 @@ module Data.Ini.Config.Bidir
 
 -- * Parsing, Serializing, and Updating Files
 -- $using
-  parseIniFile
-, emitIniFile
+--  parseIniFile
+  emitIniFile
 , UpdatePolicy(..)
 , UpdateCommentPolicy(..)
 , defaultUpdatePolicy
-, updateIniFile
+, Ini
+, ini
+, parseIni
+, getIniText
+, getIniValue
+, updateIni
+, setIniUpdatePolicy
+
 -- * Bidirectional Parser Types
 -- $types
 , IniSpec
 , SectionSpec
+
 -- * Section-Level Parsing
 -- $sections
 , section
+
 -- * Field-Level Parsing
 -- $fields
 , FieldDescription
@@ -34,6 +44,7 @@ module Data.Ini.Config.Bidir
 , comment
 , placeholderValue
 , skipIfMissing
+
 -- * FieldValues
 -- $fieldvalues
 , FieldValue(..)
@@ -44,10 +55,12 @@ module Data.Ini.Config.Bidir
 , readable
 , listWithSeparator
 , pairWithSeparator
+
 -- * Miscellaneous Helpers
 -- $misc
 , (&)
 , Lens
+
 ) where
 
 import           Control.Monad.Trans.State.Strict (State, runState, modify)
@@ -67,12 +80,27 @@ import           Text.Read (readMaybe)
 
 import           Data.Ini.Config.Raw
 
--- * Utility functions
+-- * Utility functions + lens stuffs
 
 -- | This is a
 --   <https://hackage.haskell.org/package/lens lens>-compatible
 --   type alias
 type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
+
+-- These are some inline reimplementations of "lens" operators. We
+-- need the identity functor to implement 'set':
+newtype I a = I { fromI :: a }
+instance Functor I where fmap f (I x) = I (f x)
+
+set :: Lens s t a b -> b -> s -> t
+set lns x a = fromI (lns (const (I x)) a)
+
+-- ... and we need the const functor to implement 'get':
+newtype C a b = C { fromC :: a }
+instance Functor (C a) where fmap _ (C x) = C x
+
+get :: Lens s t a b -> s -> a
+get lns a = fromC (lns C a)
 
 lkp :: NormalizedText -> Seq (NormalizedText, a) -> Maybe a
 lkp t = fmap snd . F.find (\ (t', _) -> t' == t)
@@ -92,9 +120,84 @@ a & f = f a
 infixl 1 &
 #endif
 
+-- * The 'Ini' type
+
+-- | An 'Ini' is an abstract representation of an INI file, including
+-- both its textual representation and the Haskell value it
+-- represents.
+data Ini s = Ini
+  { iniSpec :: Spec s
+  , iniCurr :: s
+  , iniDef  :: s
+  , iniLast :: Maybe RawIni
+  , iniPol  :: UpdatePolicy
+  }
+
+-- | Create a basic 'Ini' value from a default value and a spec.
+ini :: s -> IniSpec s () -> Ini s
+ini def (IniSpec spec) = Ini
+  { iniSpec = runBidirM spec
+  , iniCurr = def
+  , iniDef  = def
+  , iniLast = Nothing
+  , iniPol  = defaultUpdatePolicy
+  }
+
+-- | Get the underlying Haskell value associated with the 'Ini'.
+getIniValue :: Ini s -> s
+getIniValue = iniCurr
+
+-- | Get the textual representation of an 'Ini' value. If this 'Ini'
+-- value is the result of 'parseIni', then it will attempt to retain
+-- the textual characteristics of the parsed version as much as
+-- possible (e.g. by retaining comments, ordering, and whitespace in a
+-- way that will minimize the overall diff footprint.) If the 'Ini'
+-- value was created directly from a value and a specification, then
+-- it will pretty-print an initial version of the file with the
+-- comments and placeholder text specified in the spec.
+getIniText :: Ini s -> Text
+getIniText = printRawIni . getRawIni
+
+-- | Get the underlying 'RawIni' value for the file.
+getRawIni :: Ini s -> RawIni
+getRawIni (Ini { iniLast = Just raw }) = raw
+getRawIni (Ini { iniCurr = s
+               , iniSpec = spec
+               }) = emitIniFile s spec
+
+-- | Parse a textual representation of an 'Ini' file. If the file is
+-- malformed or if an obligatory field is not found, this will produce
+-- a human-readable error message. If an optional field is not found,
+-- then it will fall back on the existing value contained in the
+-- provided 'Ini' structure.
+parseIni :: Text -> Ini s -> Either String (Ini s)
+parseIni t i@Ini { iniSpec = spec
+                 , iniCurr = def
+                 } = do
+  RawIni raw <- parseRawIni t
+  s <- parseSections def (Seq.viewl spec) raw
+  return $ i
+    { iniCurr = s
+    , iniLast = Just (RawIni raw)
+    }
+
+-- | Update the internal value of an 'Ini' file. If this 'Ini' value
+-- is the result of 'parseIni', then the resulting 'Ini' value will
+-- attempt to retain the textual characteristics of the parsed version
+-- as much as possible (e.g. by retaining comments, ordering, and
+-- whitespace in a way that will minimize the overall diff footprint.)
+updateIni :: s -> Ini s -> Ini s
+updateIni new i =
+  case doUpdateIni new i of
+    Left err -> error err
+    Right i' -> i'
+
+setIniUpdatePolicy :: UpdatePolicy -> Ini s -> Ini s
+setIniUpdatePolicy pol i = i { iniPol = pol }
+
 -- * Type definitions
 
--- | A value of type "FieldValue" packages up a parser and emitter
+-- | A value of type 'FieldValue' packages up a parser and emitter
 --   function into a single value. These are used for bidirectional
 --   parsing and emitting of the value of a field.
 data FieldValue a = FieldValue
@@ -103,7 +206,8 @@ data FieldValue a = FieldValue
     --   the parser fails, then the string will be shown as an error
     --   message to the user.
   , fvEmit  :: a -> Text
-    -- ^ The serializer to use when serializing a value into an INI file.
+    -- ^ The function to use when serializing a value into an INI
+    -- file.
   }
 
 -- This is actually being used as a writer monad, but using a state
@@ -114,6 +218,8 @@ type BidirM s a = State (Seq s) a
 
 runBidirM :: BidirM s a -> Seq s
 runBidirM = snd . flip runState Seq.empty
+
+type Spec s = Seq (Section s)
 
 -- | An 'IniSpec' value represents the structure of an entire
 -- INI-format file in a declarative way. The @s@ parameter represents
@@ -129,6 +235,8 @@ newtype IniSpec s a = IniSpec (BidirM (Section s) a)
 newtype SectionSpec s a = SectionSpec (BidirM (Field s) a)
   deriving (Functor, Applicative, Monad)
 
+-- * Sections
+
 -- | Define the specification of a top-level INI section.
 section :: Text -> SectionSpec s () -> IniSpec s ()
 section name (SectionSpec mote) = IniSpec $ do
@@ -141,6 +249,8 @@ allOptional = all isOptional
         isOptional (FieldMb _ fd) = fdSkipIfMissing fd
 
 data Section s = Section NormalizedText (Seq (Field s)) Bool
+
+-- * Fields
 
 -- | A "Field" is a description of
 data Field s
@@ -169,6 +279,8 @@ data FieldDescription t = FieldDescription
   , fdSkipIfMissing :: Bool
   }
 
+-- ** Field operators
+
 {- |
 Associate a field description with a field. If this field
 is not present when parsing, it will attempt to fall back
@@ -192,6 +304,8 @@ serializing an INI file, this will try to serialize a value
 (.=?) :: Eq t => Lens s s (Maybe t) (Maybe t) -> FieldDescription t -> SectionSpec s ()
 l .=? f = SectionSpec $ modify (Seq.|> fd)
   where fd = FieldMb l f
+
+-- ** Field metadata
 
 {- |
 Associate a multiline comment with a "FieldDescription". When
@@ -230,6 +344,8 @@ skipIfMissing fd = fd { fdSkipIfMissing = True }
 infixr 0 .=
 infixr 0 .=?
 
+-- ** Creating fields
+
 -- | Create a description of a field by a combination of the name of
 --   the field and a "FieldValue" describing how to parse and emit
 --   values associated with that field.
@@ -245,6 +361,8 @@ field name value = FieldDescription
 -- | Create a description of a 'Bool'-valued field.
 flag :: Text -> FieldDescription Bool
 flag name = field name bool
+
+-- ** FieldValues
 
 -- | A "FieldValue" for parsing and serializing values according to
 --   the logic of the "Read" and "Show" instances for that type,
@@ -320,45 +438,24 @@ pairWithSeparator left sep right = FieldValue
   , fvEmit = \ (x, y) -> fvEmit left x <> sep <> fvEmit right y
   }
 
--- | Provided an initial value and an 'IniSpec' describing the
--- structure of an INI file, parse a 'Text' value as an INI file,
--- update the initial value corresponding to the fields in the INI
--- file, and then return the modified value.
-parseIniFile :: s -> IniSpec s () -> Text -> Either String s
-parseIniFile def (IniSpec mote) t =
-  let spec = runBidirM mote
-  in case parseIni t of
-    Left err        -> Left err
-    Right (Ini ini) -> runSpec def (Seq.viewl spec) ini
+-- * Parsing INI files
 
 -- Are you reading this source code? It's not even that gross
 -- yet. Just you wait. This is just the regular part. 'runSpec' is
 -- easy: we walk the spec, and for each section, find the
 -- corresponding section in the INI file and call runFields.
-runSpec :: s -> Seq.ViewL (Section s) -> Seq (NormalizedText, IniSection)
-        -> Either String s
-runSpec s Seq.EmptyL _ = Right s
-runSpec s (Section name fs opt Seq.:< rest) ini
-  | Just v <- lkp name ini = do
-      s' <- runFields s (Seq.viewl fs) v
-      runSpec s' (Seq.viewl rest) ini
-  | opt = runSpec s (Seq.viewl rest) ini
+parseSections
+  :: s
+  -> Seq.ViewL (Section s)
+  -> Seq (NormalizedText, IniSection)
+  -> Either String s
+parseSections s Seq.EmptyL _ = Right s
+parseSections s (Section name fs opt Seq.:< rest) i
+  | Just v <- lkp name i = do
+      s' <- parseFields s (Seq.viewl fs) v
+      parseSections s' (Seq.viewl rest) i
+  | opt = parseSections s (Seq.viewl rest) i
   | otherwise = Left ("Unable to find section " ++ show name)
-
--- These are some inline reimplementations of "lens" operators. We
--- need the identity functor to implement 'set':
-newtype I a = I { fromI :: a }
-instance Functor I where fmap f (I x) = I (f x)
-
-set :: Lens s t a b -> b -> s -> t
-set lns x a = fromI (lns (const (I x)) a)
-
--- ... and we need the const functor to implement 'get':
-newtype C a b = C { fromC :: a }
-instance Functor (C a) where fmap _ (C x) = C x
-
-get :: Lens s t a b -> s -> a
-get lns a = fromC (lns C a)
 
 -- Now that we've got 'set', we can walk the field descriptions and
 -- find them. There's some fiddly logic, but the high-level idea is
@@ -366,29 +463,29 @@ get lns a = fromC (lns C a)
 -- the provided parser and use the provided lens to add it to the
 -- value. We have to decide what to do if it's not there, which
 -- depends on lens metadata and whether it's an optional field or not.
-runFields :: s -> Seq.ViewL (Field s) -> IniSection -> Either String s
-runFields s Seq.EmptyL _ = Right s
-runFields s (Field l descr Seq.:< fs) sect
+parseFields :: s -> Seq.ViewL (Field s) -> IniSection -> Either String s
+parseFields s Seq.EmptyL _ = Right s
+parseFields s (Field l descr Seq.:< fs) sect
   | Just v <- lkp (fdName descr) (isVals sect) = do
       value <- fvParse (fdValue descr) (T.strip (vValue v))
-      runFields (set l value s) (Seq.viewl fs) sect
+      parseFields (set l value s) (Seq.viewl fs) sect
   | fdSkipIfMissing descr =
-      runFields s (Seq.viewl fs) sect
+      parseFields s (Seq.viewl fs) sect
   | otherwise = Left ("Unable to find field " ++ show (fdName descr))
-runFields s (FieldMb l descr Seq.:< fs) sect
+parseFields s (FieldMb l descr Seq.:< fs) sect
   | Just v <- lkp (fdName descr) (isVals sect) = do
       value <- fvParse (fdValue descr) (T.strip (vValue v))
-      runFields (set l (Just value) s) (Seq.viewl fs) sect
+      parseFields (set l (Just value) s) (Seq.viewl fs) sect
   | otherwise =
-      runFields (set l Nothing s) (Seq.viewl fs) sect
+      parseFields (set l Nothing s) (Seq.viewl fs) sect
 
 -- | Serialize a value as an INI file according to a provided
 -- 'IniSpec'.
-emitIniFile :: s -> IniSpec s () -> Text
-emitIniFile s (IniSpec mote) =
-  let spec = runBidirM mote in
-  printIni $ Ini $ fmap (\ (Section name fs _) ->
-                           (name, toSection s (actualText name) fs)) spec
+emitIniFile :: s -> Spec s -> RawIni
+emitIniFile s spec =
+  RawIni $
+    fmap (\ (Section name fs _) ->
+             (name, toSection s (actualText name) fs)) spec
 
 mkComments :: Seq Text -> Seq BlankLine
 mkComments comments =
@@ -476,37 +573,92 @@ data UpdateCommentPolicy
 --  file, while newly added fields (for example, fields which have
 --  been changed from a default value) will be added to the end of the
 --  section in which they appear.
-updateIniFile :: s -> IniSpec s () -> Text -> UpdatePolicy -> Either String Text
-updateIniFile s (IniSpec mote) t pol =
-  let spec = runBidirM mote
-  in case parseIni t of
-    Left err -> Left ("Error parsing existing INI file: " ++ err)
-    Right (Ini ini) -> do
-      ini' <- updateIniSections s ini spec pol
-      return (printIni (Ini ini'))
+--doUpdateIni :: s -> s -> Spec s -> RawIni -> UpdatePolicy -> Either String (Ini s)
+doUpdateIni :: s -> Ini s -> Either String (Ini s)
+doUpdateIni s i@Ini { iniSpec = spec
+                    , iniDef  = def
+                    , iniPol = pol
+                    } = do -- spec (RawIni ini) pol = do
+  let RawIni ini' = getRawIni i
+  res <- updateSections s def ini' spec pol
+  return $ i
+    { iniCurr = s
+    , iniLast = Just (RawIni res)
+    }
 
-updateIniSections :: s -> Seq (NormalizedText, IniSection)
-                  -> Seq (Section s)
-                  -> UpdatePolicy
-                  -> Either String (Seq (NormalizedText, IniSection))
-updateIniSections s sections fields pol = do
+updateSections
+  :: s
+  -> s
+  -> Seq (NormalizedText, IniSection)
+  -> Seq (Section s)
+  -> UpdatePolicy
+  -> Either String (Seq (NormalizedText, IniSection))
+updateSections s def sections fields pol = do
+  -- First, we process all the sections that actually appear in the
+  -- INI file in order
   existingSections <- F.for sections $ \ (name, sec) -> do
     let err  = (Left ("Unexpected top-level section: " ++ show name))
     Section _ spec _ <- maybe err Right
       (F.find (\ (Section n _ _) -> n == name) fields)
-    newVals <- updateIniSection s (isVals sec) spec pol
+    newVals <- updateFields s (isVals sec) spec pol
     return (name, sec { isVals = newVals })
+  -- And then
   let existingSectionNames = fmap fst existingSections
   newSections <- F.for fields $
-    \ (Section nm spec isOpt) ->
-      if nm `elem` existingSectionNames
-        then return mempty
-        else return (Seq.singleton (nm, IniSection (actualText nm) mempty 0 0 mempty))
+    \ (Section nm spec _) ->
+      if | nm `elem` existingSectionNames -> return mempty
+         | otherwise ->
+           let rs = emitNewFields s def spec
+           in if Seq.null rs
+                then return mempty
+                else return $ Seq.singleton
+                       ( nm
+                       , IniSection (actualText nm) rs 0 0 mempty
+                       )
   return (existingSections <> F.asum newSections)
 
-updateIniSection :: s -> Seq (NormalizedText, IniValue) -> Seq (Field s)
+-- We won't emit a section if everything in the section is also
+-- missing
+emitNewFields :: s -> s -> Seq (Field s) -> Seq (NormalizedText, IniValue)
+emitNewFields s def fields = go (Seq.viewl fields) where
+  go EmptyL = Seq.empty
+  go (Field l d :< fs)
+    -- If a field is not present but is also the same as the default,
+    -- then we can safely omit it
+    | get l s == get l def = go (Seq.viewl fs)
+    -- otherwise, we should add it to the result
+    | otherwise =
+      let new = ( fdName d
+                , IniValue
+                  { vLineNo       = 0
+                  , vName         = actualText (fdName d)
+                  , vValue        = fvEmit (fdValue d) (get l s)
+                  , vComments     = mempty
+                  , vCommentedOut = False
+                  , vDelimiter    = '='
+                  }
+                )
+      in new <| go (Seq.viewl fs)
+  go (FieldMb l d :< fs) =
+    case get l s of
+      Nothing -> go (Seq.viewl fs)
+      Just v ->
+        let new = ( fdName d
+                  , IniValue
+                    { vLineNo       = 0
+                    , vName         = actualText (fdName d)
+                    , vValue        = fvEmit (fdValue d) v
+                    , vComments     = mempty
+                    , vCommentedOut = False
+                    , vDelimiter    = '='
+                    }
+                  )
+        in new <| go (Seq.viewl fs)
+
+
+updateFields :: s -> Seq (NormalizedText, IniValue) -> Seq (Field s)
                  -> UpdatePolicy -> Either String (Seq (NormalizedText, IniValue))
-updateIniSection s values fields pol = go (Seq.viewl values) fields
+updateFields s values fields pol = go (Seq.viewl values) fields
   where go ((t, val) :< vs) fs =
           -- For each field, we need to fetch the description of the
           -- field in the spec
@@ -565,7 +717,7 @@ updateIniSection s values fields pol = go (Seq.viewl values) fields
         -- were left out, but if we have any non-optional fields left
         -- over, then we definitely need to include them.
         go EmptyL fs = return (finish (Seq.viewl fs))
-        finish (f@(Field l _) :< fs)
+        finish (f@(Field {}) :< fs)
           | updateAddOptionalFields pol
           , Just val <- mkValue (fieldName f) f '=' =
             (fieldName f, val) <| finish (Seq.viewl fs)
@@ -602,19 +754,6 @@ updateIniSection s values fields pol = go (Seq.viewl values) fields
                  case get l s of
                    Just v  -> Just (val { vValue = " " <> fvEmit (fdValue descr) v })
                    Nothing -> Nothing
-
-
--- DELETE ME LATER
-
-lens :: (s -> a) -> (b -> s -> t) -> Lens s t a b
-lens gt st f a = (`st` a) `fmap` f (gt a)
-
-_1 :: Lens (a, b) (a, b) a a
-_1 = lens fst (\ a (_, b) -> (a, b))
-
-_2 :: Lens (a, b) (a, b) b b
-_2 = lens snd (\ b (a, _) -> (a, b))
-
 
 
 {- $main
@@ -704,7 +843,6 @@ configSpec = do
                 & 'skipIfMissing'
     cfPost '.=' 'field' \"port\" 'number'
                 & 'comment' [\"The port number\"]
-                & 'defaultValue' 9999
   'sectionOpt' \"LOCAL\" $ do
     cfUser '.=?' 'field' \"user\" 'text'
 @
