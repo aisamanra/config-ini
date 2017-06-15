@@ -12,18 +12,19 @@ module Data.Ini.Config.Bidir
 
 -- * Parsing, Serializing, and Updating Files
 -- $using
---  parseIniFile
-  emitIniFile
+  Ini
+, ini
+, getIniValue
+-- ** Parsing INI files
+, parseIni
+-- ** Serializing INI files
+, getIniText
+-- ** Updating INI Files
+, updateIni
+, setIniUpdatePolicy
 , UpdatePolicy(..)
 , UpdateCommentPolicy(..)
 , defaultUpdatePolicy
-, Ini
-, ini
-, parseIni
-, getIniText
-, getIniValue
-, updateIni
-, setIniUpdatePolicy
 
 -- * Bidirectional Parser Types
 -- $types
@@ -557,6 +558,13 @@ data UpdateCommentPolicy
     -- by an 'updateIniFile' call.
     deriving (Eq, Show)
 
+getComments :: FieldDescription s -> UpdateCommentPolicy -> (Seq BlankLine)
+getComments _ CommentPolicyNone = Seq.empty
+getComments f CommentPolicyAddFieldComment =
+  mkComments (fdComment f)
+getComments _ (CommentPolicyAddDefaultComment cs) =
+  mkComments cs
+
 -- | Given a value, an 'IniSpec', and a 'Text' form of an INI file,
 -- parse 'Text' as INI and then selectively modify the file whenever
 -- the provided value differs from the file. This is designed to help
@@ -608,7 +616,7 @@ updateSections s def sections fields pol = do
     \ (Section nm spec _) ->
       if | nm `elem` existingSectionNames -> return mempty
          | otherwise ->
-           let rs = emitNewFields s def spec
+           let rs = emitNewFields s def spec pol
            in if Seq.null rs
                 then return mempty
                 else return $ Seq.singleton
@@ -619,21 +627,27 @@ updateSections s def sections fields pol = do
 
 -- We won't emit a section if everything in the section is also
 -- missing
-emitNewFields :: s -> s -> Seq (Field s) -> Seq (NormalizedText, IniValue)
-emitNewFields s def fields = go (Seq.viewl fields) where
+emitNewFields
+  :: s -> s
+  -> Seq (Field s)
+  -> UpdatePolicy ->
+  Seq (NormalizedText, IniValue)
+emitNewFields s def fields pol = go (Seq.viewl fields) where
   go EmptyL = Seq.empty
   go (Field l d :< fs)
     -- If a field is not present but is also the same as the default,
     -- then we can safely omit it
-    | get l s == get l def = go (Seq.viewl fs)
+    | get l s == get l def && not (updateAddOptionalFields pol) =
+      go (Seq.viewl fs)
     -- otherwise, we should add it to the result
     | otherwise =
-      let new = ( fdName d
+      let cs = getComments d (updateGeneratedCommentPolicy pol)
+          new = ( fdName d
                 , IniValue
                   { vLineNo       = 0
                   , vName         = actualText (fdName d)
                   , vValue        = fvEmit (fdValue d) (get l s)
-                  , vComments     = mempty
+                  , vComments     = cs
                   , vCommentedOut = False
                   , vDelimiter    = '='
                   }
@@ -643,12 +657,13 @@ emitNewFields s def fields = go (Seq.viewl fields) where
     case get l s of
       Nothing -> go (Seq.viewl fs)
       Just v ->
-        let new = ( fdName d
+        let cs = getComments d (updateGeneratedCommentPolicy pol)
+            new = ( fdName d
                   , IniValue
                     { vLineNo       = 0
                     , vName         = actualText (fdName d)
                     , vValue        = fvEmit (fdValue d) v
-                    , vComments     = mempty
+                    , vComments     = cs
                     , vCommentedOut = False
                     , vDelimiter    = '='
                     }
