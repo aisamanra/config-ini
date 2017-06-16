@@ -11,6 +11,10 @@ module Data.Ini.Config.Raw
   -- * serializing and deserializing
 , parseRawIni
 , printRawIni
+  -- * inspection
+, lookupInSection
+, lookupSection
+, lookupValue
 ) where
 
 import           Control.Monad (void)
@@ -212,6 +216,40 @@ printRawIni = LazyText.toStrict . Builder.toLazyText . F.foldMap build . fromRaw
       Builder.singleton (vDelimiter val) <>
       Builder.fromText (vValue val) <>
       Builder.singleton '\n'
+
+-- | Look up an Ini value by section name and key. Returns the sequence
+-- of matches.
+lookupInSection :: Text
+                -- ^ The section name. Will be normalized prior to
+                -- comparison.
+                -> Text
+                -- ^ The key. Will be normalized prior to comparison.
+                -> RawIni
+                -- ^ The Ini to search.
+                -> Seq.Seq Text
+lookupInSection sec opt ini =
+    vValue <$> (F.asum (lookupValue opt <$> lookupSection sec ini))
+
+-- | Look up an Ini section by name. Returns a sequence of all matching
+-- section records.
+lookupSection :: Text
+              -- ^ The section name. Will be normalized prior to
+              -- comparison.
+              -> RawIni
+              -- ^ The Ini to search.
+              -> Seq.Seq IniSection
+lookupSection name ini =
+    snd <$> (Seq.filter ((== normalize name) . fst) $ fromRawIni ini)
+
+-- | Look up an Ini key's value in a given section by the key. Returns
+-- the sequence of matches.
+lookupValue :: Text
+            -- ^ The key. Will be normalized prior to comparison.
+            -> IniSection
+            -- ^ The section to search.
+            -> Seq.Seq IniValue
+lookupValue name section =
+    snd <$> Seq.filter ((== normalize name) . fst) (isVals section)
 
 {- $main
 
