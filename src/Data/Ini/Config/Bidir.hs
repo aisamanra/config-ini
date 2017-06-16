@@ -15,17 +15,17 @@ module Data.Ini.Config.Bidir
   Ini
 , ini
 , getIniValue
+, getRawIni
 -- ** Parsing INI files
 , parseIni
 -- ** Serializing INI files
-, getIniText
+, serializeIni
 -- ** Updating INI Files
 , updateIni
 , setIniUpdatePolicy
 , UpdatePolicy(..)
 , UpdateCommentPolicy(..)
 , defaultUpdatePolicy
-
 -- * Bidirectional Parser Types
 -- $types
 , IniSpec
@@ -156,8 +156,8 @@ getIniValue = iniCurr
 -- value was created directly from a value and a specification, then
 -- it will pretty-print an initial version of the file with the
 -- comments and placeholder text specified in the spec.
-getIniText :: Ini s -> Text
-getIniText = printRawIni . getRawIni
+serializeIni :: Ini s -> Text
+serializeIni = printRawIni . getRawIni
 
 -- | Get the underlying 'RawIni' value for the file.
 getRawIni :: Ini s -> RawIni
@@ -247,7 +247,7 @@ section name (SectionSpec mote) = IniSpec $ do
 allOptional :: (Seq (Field s)) -> Bool
 allOptional = all isOptional
   where isOptional (Field   _ fd) = fdSkipIfMissing fd
-        isOptional (FieldMb _ fd) = fdSkipIfMissing fd
+        isOptional (FieldMb _ _)  = True
 
 data Section s = Section NormalizedText (Seq (Field s)) Bool
 
@@ -352,7 +352,7 @@ infixr 0 .=?
 --   values associated with that field.
 field :: Text -> FieldValue a -> FieldDescription a
 field name value = FieldDescription
-  { fdName          = normalize name
+  { fdName          = normalize (name <> " ")
   , fdValue         = value
   , fdComment       = Seq.empty
   , fdDummy         = Nothing
@@ -510,14 +510,18 @@ toSection s name fs = IniSection
                 , vDelimiter = '='
                 }
             )
-          toVal (Field l descr) =
-            mkIniValue (fvEmit (fdValue descr) (get l s)) descr False
-          toVal (FieldMb l descr) =
-            case get l s of
-              Nothing ->
-                mkIniValue "" descr True
-              Just v ->
+          toVal (Field l descr)
+            | Just dummy <- fdDummy descr =
+                mkIniValue dummy descr False
+            | otherwise =
+                mkIniValue (fvEmit (fdValue descr) (get l s)) descr False
+          toVal (FieldMb l descr)
+            | Just dummy <- fdDummy descr =
+                mkIniValue dummy descr True
+            | Just v <- get l s =
                 mkIniValue (fvEmit (fdValue descr) v) descr True
+            | otherwise =
+                mkIniValue "" descr True
 
 -- | An 'UpdatePolicy' describes how to
 data UpdatePolicy = UpdatePolicy
@@ -584,7 +588,7 @@ getComments _ (CommentPolicyAddDefaultComment cs) =
 --doUpdateIni :: s -> s -> Spec s -> RawIni -> UpdatePolicy -> Either String (Ini s)
 doUpdateIni :: s -> Ini s -> Either String (Ini s)
 doUpdateIni s i@Ini { iniSpec = spec
-                    , iniDef  = def
+                    , iniDef = def
                     , iniPol = pol
                     } = do -- spec (RawIni ini) pol = do
   let RawIni ini' = getRawIni i
@@ -756,7 +760,7 @@ updateFields s values fields pol = go (Seq.viewl values) fields
                   mkComments cs
               val = IniValue
                       { vLineNo       = 0
-                      , vName         = actualText t <> " "
+                      , vName         = actualText t
                       , vValue        = ""
                       , vComments     = comments
                       , vCommentedOut = False

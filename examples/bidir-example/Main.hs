@@ -65,7 +65,7 @@ main = do
       let v = getIniValue p
       print v
       putStrLn "------------------------"
-      putStr (unpack (getIniText configSpec))
+      putStr (unpack (serializeIni configSpec))
       putStrLn "------------------------"
       let v' = v { _confPort = 9191
                  , _confHostname = "argl"
@@ -77,7 +77,7 @@ main = do
                         [ "value added by application" ]
                   , updateIgnoreExtraneousFields = False
                   }
-      let up = getIniText $ updateIni v' $ setIniUpdatePolicy pol p
+      let up = serializeIni $ updateIni v' $ setIniUpdatePolicy pol p
       putStrLn "------------------------"
       putStr (unpack up)
       putStrLn "------------------------"
