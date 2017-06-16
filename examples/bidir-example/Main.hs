@@ -37,16 +37,15 @@ configSpec = ini sampleConfig $ do
     confPort .= field "port" number
       & comment [ "the port in question" ]
     confUseEncryption .= flag "encryption"
-      & skipIfMissing
+      & optional
       & comment [ "whether to use encryption (defaults to true)" ]
     confHostname .= field "hostname" text
-      & skipIfMissing
+      & optional
       & comment [ "hostname to connect to (optional)" ]
     confConfigFile .=? field "config file" text
       & placeholderValue "<file path>"
-  section "LOCAL" $ do
+  section "LOCAL" & allOptional $ do
     confPath .= field "path" (listWithSeparator ":" text)
-      & skipIfMissing
       & comment [ "a colon-separated path list" ]
 
 example :: Text

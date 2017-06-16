@@ -34,6 +34,7 @@ module Data.Ini.Config.Bidir
 -- * Section-Level Parsing
 -- $sections
 , section
+, allOptional
 
 -- * Field-Level Parsing
 -- $fields
@@ -44,7 +45,7 @@ module Data.Ini.Config.Bidir
 , flag
 , comment
 , placeholderValue
-, skipIfMissing
+, optional
 
 -- * FieldValues
 -- $fieldvalues
@@ -65,12 +66,13 @@ module Data.Ini.Config.Bidir
 ) where
 
 import           Control.Monad.Trans.State.Strict (State, runState, modify)
+import qualified Control.Monad.Trans.State.Strict as State
 import qualified Data.Foldable as F
 #if __GLASGOW_HASKELL__ >= 710
 import           Data.Function ((&))
 #endif
 import           Data.Monoid ((<>))
-import           Data.Sequence ((<|), Seq, ViewL(..))
+import           Data.Sequence ((<|), Seq, ViewL(..), ViewR(..))
 import qualified Data.Sequence as Seq
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -242,12 +244,27 @@ newtype SectionSpec s a = SectionSpec (BidirM (Field s) a)
 section :: Text -> SectionSpec s () -> IniSpec s ()
 section name (SectionSpec mote) = IniSpec $ do
   let fields = runBidirM mote
-  modify (Seq.|> Section (normalize name) fields (allOptional fields))
+  modify (Seq.|> Section (normalize name) fields (allFieldsOptional fields))
 
-allOptional :: (Seq (Field s)) -> Bool
-allOptional = all isOptional
+allFieldsOptional :: (Seq (Field s)) -> Bool
+allFieldsOptional = all isOptional
   where isOptional (Field   _ fd) = fdSkipIfMissing fd
         isOptional (FieldMb _ _)  = True
+
+allOptional
+  :: (SectionSpec s () -> IniSpec s ())
+  -> (SectionSpec s () -> IniSpec s ())
+allOptional k spec = IniSpec $ do
+  let IniSpec comp = k spec
+  comp
+  modify (\ s -> case Seq.viewr s of
+             EmptyR -> s
+             rs :> Section name fields _ ->
+               rs Seq.|> Section name (fmap makeOptional fields) True)
+
+makeOptional :: Field s -> Field s
+makeOptional (Field l d) = Field l d { fdSkipIfMissing = True }
+makeOptional (FieldMb l d) = FieldMb l d { fdSkipIfMissing = True }
 
 data Section s = Section NormalizedText (Seq (Field s)) Bool
 
@@ -339,8 +356,8 @@ placeholderValue t fd = fd { fdDummy = Just t }
 
 -- | If the field is not found in parsing, simply skip instead of
 --   raising an error or setting anything.
-skipIfMissing :: FieldDescription t -> FieldDescription t
-skipIfMissing fd = fd { fdSkipIfMissing = True }
+optional :: FieldDescription t -> FieldDescription t
+optional fd = fd { fdSkipIfMissing = True }
 
 infixr 0 .=
 infixr 0 .=?
@@ -456,7 +473,8 @@ parseSections s (Section name fs opt Seq.:< rest) i
       s' <- parseFields s (Seq.viewl fs) v
       parseSections s' (Seq.viewl rest) i
   | opt = parseSections s (Seq.viewl rest) i
-  | otherwise = Left ("Unable to find section " ++ show name)
+  | otherwise = Left ("Unable to find section " ++
+                      show (normalizedText name))
 
 -- Now that we've got 'set', we can walk the field descriptions and
 -- find them. There's some fiddly logic, but the high-level idea is
@@ -472,7 +490,8 @@ parseFields s (Field l descr Seq.:< fs) sect
       parseFields (set l value s) (Seq.viewl fs) sect
   | fdSkipIfMissing descr =
       parseFields s (Seq.viewl fs) sect
-  | otherwise = Left ("Unable to find field " ++ show (fdName descr))
+  | otherwise = Left ("Unable to find field " ++
+                      show (normalizedText (fdName descr)))
 parseFields s (FieldMb l descr Seq.:< fs) sect
   | Just v <- lkp (fdName descr) (isVals sect) = do
       value <- fvParse (fdValue descr) (T.strip (vValue v))
@@ -499,14 +518,14 @@ toSection s name fs = IniSection
   , isStartLine = 0
   , isEndLine   = 0
   , isComments  = Seq.empty
-  } where mkIniValue val descr optional =
+  } where mkIniValue val descr opt =
             ( fdName descr
             , IniValue
                 { vLineNo = 0
                 , vName   = actualText (fdName descr)
                 , vValue  = val
                 , vComments = mkComments (fdComment descr)
-                , vCommentedOut = optional
+                , vCommentedOut = opt
                 , vDelimiter = '='
                 }
             )
