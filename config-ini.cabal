@@ -1,5 +1,5 @@
 name:             config-ini
-version:          0.1.2.0
+version:          0.1.2.1
 synopsis:         A library for simple INI-based configuration files.
 homepage:         https://github.com/aisamanra/config-ini
 bug-reports:      https://github.com/aisamanra/config-ini/issues
@@ -36,7 +36,7 @@ library
   exposed-modules:     Data.Ini.Config
                      , Data.Ini.Config.Raw
   ghc-options:         -Wall
-  build-depends:       base                  >=4.7 && <4.10
+  build-depends:       base                  >=4.7 && <5
                      , text                  >=1.2.2 && <1.3
                      , unordered-containers  >=0.2.7 && <0.3
                      , transformers          >=0.4.1 && <0.6
@@ -49,7 +49,7 @@ executable basic-example
   hs-source-dirs:   examples/basic-example
   main-is:          Main.hs
   ghc-options:      -Wall
-  build-depends:    base >=4.7 && <4.10
+  build-depends:    base >=4.7 && <5
                   , text
                   , config-ini
   default-language: Haskell2010
@@ -60,7 +60,7 @@ executable config-example
   hs-source-dirs:   examples/config-example
   main-is:          Main.hs
   ghc-options:      -Wall
-  build-depends:    base >=4.7 && <4.10
+  build-depends:    base >=4.7 && <5
                   , text
                   , config-ini
   default-language: Haskell2010
