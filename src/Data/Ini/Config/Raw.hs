@@ -26,8 +26,11 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LazyText
 import qualified Data.Text.Lazy.Builder as Builder
+import           Data.Void (Void)
 import           Text.Megaparsec
-import           Text.Megaparsec.Text
+import           Text.Megaparsec.Char
+
+type Parser = Parsec (ErrorFancy Void) Text
 
 data NormalizedText = NormalizedText
   { actualText     :: Text
