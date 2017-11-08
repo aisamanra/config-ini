@@ -2,8 +2,9 @@ module Main where
 
 import           Data.List
 import           Data.Ini.Config.Raw
-import           Data.HashMap.Strict (HashMap)
+import           Data.Sequence (Seq)
 import           Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           System.Directory
 import           System.Exit
@@ -19,15 +20,21 @@ main = do
                  ]
   mapM_ runTest inis
 
-toMaps :: Ini -> HashMap Text (HashMap Text Text)
-toMaps (Ini m) = fmap (fmap vValue . isVals) m
+type IniSeq = Seq (Text, Seq (Text, Text))
+
+toMaps :: RawIni -> IniSeq
+toMaps (RawIni m) = fmap sectionToPair m
+  where sectionToPair (name, section) =
+          (normalizedText name, fmap valueToPair (isVals section))
+        valueToPair (name, value) =
+          (normalizedText name, T.strip (vValue value))
 
 runTest :: FilePath -> IO ()
 runTest iniF = do
   let hsF = take (length iniF - 4) iniF ++ ".hs"
   ini <- T.readFile (dir ++ "/" ++ iniF)
   hs  <- readFile (dir ++ "/" ++ hsF)
-  case parseIni ini of
+  case parseRawIni ini of
     Left err -> do
       putStrLn ("Error parsing " ++ iniF)
       putStrLn err

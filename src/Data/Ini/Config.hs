@@ -1,11 +1,72 @@
+{-|
+Module     : Data.Ini.Config
+Copyright  : (c) Getty Ritter, 2017
+License    : BSD
+Maintainer : Getty Ritter <config-ini@infinitenegativeutility.com>
+Stability  : experimental
+
+The 'config-ini' library exports some simple monadic functions to
+make parsing INI-like configuration easier. INI files have a
+two-level structure: the top-level named chunks of configuration,
+and the individual key-value pairs contained within those chunks.
+For example, the following INI file has two sections, @NETWORK@
+and @LOCAL@, and each contains its own key-value pairs. Comments,
+which begin with @#@ or @;@, are ignored:
+--
+> [NETWORK]
+> host = example.com
+> port = 7878
+>
+> # here is a comment
+> [LOCAL]
+> user = terry
+--
+The combinators provided here are designed to write quick and
+idiomatic parsers for files of this form. Sections are parsed by
+'IniParser' computations, like 'section' and its variations,
+while the fields within sections are parsed by 'SectionParser'
+computations, like 'field' and its variations. If we want to
+parse an INI file like the one above, treating the entire
+@LOCAL@ section as optional, we can write it like this:
+--
+> data Config = Config
+>   { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
+>     deriving (Eq, Show)
+>
+> data NetworkConfig = NetworkConfig
+>   { netHost :: String, netPort :: Int }
+>     deriving (Eq, Show)
+>
+> data LocalConfig = LocalConfig
+>   { localUser :: Text }
+>     deriving (Eq, Show)
+>
+> configParser :: IniParser Config
+> configParser = do
+>   netCf <- section "NETWORK" $ do
+>     host <- fieldOf "host" string
+>     port <- fieldOf "port" number
+>     return NetworkConfig { netHost = host, netPort = port }
+>   locCf <- sectionMb "LOCAL" $
+>     LocalConfig <$> field "user"
+>   return Config { cfNetwork = netCf, cfLocal = locCf }
+--
+We can run our computation with 'parseIniFile', which,
+when run on our example file above, would produce the
+following:
+--
+>>> parseIniFile example configParser
+Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})
+
+-}
+
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Data.Ini.Config
 (
--- $main
--- * Running Parsers
+-- * Parsing Files
   parseIniFile
 -- * Parser Types
 , IniParser
@@ -28,17 +89,27 @@ module Data.Ini.Config
 , number
 , string
 , flag
+, listWithSeparator
 ) where
 
 import           Control.Applicative (Applicative(..), Alternative(..))
 import           Control.Monad.Trans.Except
-import qualified Data.HashMap.Strict as HM
 import           Data.Ini.Config.Raw
+import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
 import           Data.String (IsString(..))
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable, Proxy(..), typeRep)
+import           GHC.Exts (IsList(..))
 import           Text.Read (readMaybe)
+
+lkp :: NormalizedText -> Seq (NormalizedText, a) -> Maybe a
+lkp t = go . Seq.viewl
+  where go ((t', x) Seq.:< rs)
+          | t == t'   = Just x
+          | otherwise = go (Seq.viewl rs)
+        go Seq.EmptyL = Nothing
 
 addLineInformation :: Int -> Text -> StParser s a -> StParser s a
 addLineInformation lineNo sec = withExceptT go
@@ -50,7 +121,7 @@ type StParser s a = ExceptT String ((->) s) a
 
 -- | An 'IniParser' value represents a computation for parsing entire
 --   INI-format files.
-newtype IniParser a = IniParser (StParser Ini a)
+newtype IniParser a = IniParser (StParser RawIni a)
   deriving (Functor, Applicative, Alternative, Monad)
 
 -- | A 'SectionParser' value represents a computation for parsing a single
@@ -61,7 +132,7 @@ newtype SectionParser a = SectionParser (StParser IniSection a)
 -- | Parse a 'Text' value as an INI file and run an 'IniParser' over it
 parseIniFile :: Text -> IniParser a -> Either String a
 parseIniFile text (IniParser mote) = do
-  ini <- parseIni text
+  ini <- parseRawIni text
   runExceptT mote ini
 
 -- | Find a named section in the INI file and parse it with the provided
@@ -74,8 +145,8 @@ parseIniFile text (IniParser mote) = do
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ section "TWO" (field "x")
 --   Left "No top-level section named \"TWO\""
 section :: Text -> SectionParser a -> IniParser a
-section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
-  case HM.lookup (T.toLower name) ini of
+section name (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
+  case lkp (normalize name) ini of
     Nothing  -> Left ("No top-level section named " ++ show name)
     Just sec -> runExceptT thunk sec
 
@@ -90,8 +161,8 @@ section name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionMb "TWO" (field "x")
 --   Right Nothing
 sectionMb :: Text -> SectionParser a -> IniParser (Maybe a)
-sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
-  case HM.lookup (T.toLower name) ini of
+sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
+  case lkp (normalize name) ini of
     Nothing  -> return Nothing
     Just sec -> Just `fmap` runExceptT thunk sec
 
@@ -106,8 +177,8 @@ sectionMb name (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ sectionDef "TWO" "def" (field "x")
 --   Right "def"
 sectionDef :: Text -> a -> SectionParser a -> IniParser a
-sectionDef name def (SectionParser thunk) = IniParser $ ExceptT $ \(Ini ini) ->
-  case HM.lookup (T.toLower name) ini of
+sectionDef name def (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
+  case lkp (normalize name) ini of
     Nothing  -> return def
     Just sec -> runExceptT thunk sec
 
@@ -121,7 +192,7 @@ getSectionName = ExceptT $ (\ m -> return (isName m))
 
 rawFieldMb :: Text -> StParser IniSection (Maybe IniValue)
 rawFieldMb name = ExceptT $ \m ->
-  return (HM.lookup name (isVals m))
+  return (lkp (normalize name) (isVals m))
 
 rawField :: Text -> StParser IniSection IniValue
 rawField name = do
@@ -196,7 +267,7 @@ fieldMbOf name parse = SectionParser $ do
 --   Right "def"
 fieldDef :: Text -> Text -> SectionParser Text
 fieldDef name def = SectionParser $ ExceptT $ \m ->
-  case HM.lookup name (isVals m) of
+  case lkp (normalize name) (isVals m) of
     Nothing -> return def
     Just x  -> return (vValue x)
 
@@ -271,7 +342,7 @@ readable t = case readMaybe str of
 number :: (Num a, Read a, Typeable a) => Text -> Either String a
 number = readable
 
--- | Convert a textua value to the appropriate string type. This will
+-- | Convert a textual value to the appropriate string type. This will
 --   never fail.
 --
 --   >>> string "foo" :: Either String String
@@ -307,6 +378,30 @@ flag s = case T.toLower s of
   "n"     -> Right False
   _       -> Left ("Unable to parse " ++ show s ++ " as a boolean")
 
+-- | Convert a reader for a value into a reader for a list of those
+--   values, separated by a chosen separator. This will split apart
+--   the string on that separator, get rid of leading and trailing
+--   whitespace on the individual chunks, and then attempt to parse
+--   each of them according to the function provided, turning the
+--   result into a list.
+--
+--   This is overloaded with the "IsList" typeclass, so it can be
+--   used transparently to parse other list-like types.
+--
+--   >>> listWithSeparator "," number "2, 3, 4" :: Either String [Int]
+--   Right [2,3,4]
+--   >>> listWithSeparator " " number "7 8 9" :: Either String [Int]
+--   Right [7,8,9]
+--   >>> listWithSeparator ":" string "/bin:/usr/bin" :: Either String [FilePath]
+--   Right ["/bin","/usr/bin"]
+--   >>> listWithSeparator "," number "7 8 9" :: Either String [Int]
+--   Left "Unable to parse \"2 3 4\" as a value of type Int"
+listWithSeparator :: (IsList l)
+                  => Text
+                  -> (Text -> Either String (Item l))
+                  -> Text -> Either String l
+listWithSeparator sep rd =
+  fmap fromList . mapM (rd . T.strip) . T.splitOn sep
 
 -- $setup
 --
@@ -342,57 +437,3 @@ flag s = case T.toLower s of
 -- >>> :{
 --    let example = "[NETWORK]\nhost = example.com\nport = 7878\n\n# here is a comment\n[LOCAL]\nuser = terry\n"
 -- >>> :}
-
--- $main
--- The 'config-ini' library exports some simple monadic functions to
--- make parsing INI-like configuration easier. INI files have a
--- two-level structure: the top-level named chunks of configuration,
--- and the individual key-value pairs contained within those chunks.
--- For example, the following INI file has two sections, @NETWORK@
--- and @LOCAL@, and each contains its own key-value pairs. Comments,
--- which begin with @#@ or @;@, are ignored:
---
--- > [NETWORK]
--- > host = example.com
--- > port = 7878
--- >
--- > # here is a comment
--- > [LOCAL]
--- > user = terry
---
--- The combinators provided here are designed to write quick and
--- idiomatic parsers for files of this form. Sections are parsed by
--- 'IniParser' computations, like 'section' and its variations,
--- while the fields within sections are parsed by 'SectionParser'
--- computations, like 'field' and its variations. If we want to
--- parse an INI file like the one above, treating the entire
--- @LOCAL@ section as optional, we can write it like this:
---
--- > data Config = Config
--- >   { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
--- >     deriving (Eq, Show)
--- >
--- > data NetworkConfig = NetworkConfig
--- >   { netHost :: String, netPort :: Int }
--- >     deriving (Eq, Show)
--- >
--- > data LocalConfig = LocalConfig
--- >   { localUser :: Text }
--- >     deriving (Eq, Show)
--- >
--- > configParser :: IniParser Config
--- > configParser = do
--- >   netCf <- section "NETWORK" $ do
--- >     host <- fieldOf "host" string
--- >     port <- fieldOf "port" number
--- >     return NetworkConfig { netHost = host, netPort = port }
--- >   locCf <- sectionMb "LOCAL" $
--- >     LocalConfig <$> field "user"
--- >   return Config { cfNetwork = netCf, cfLocal = locCf }
---
--- We can run our computation with 'parseIniFile', which,
--- when run on our example file above, would produce the
--- following:
---
--- >>> parseIniFile example configParser
--- Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})
