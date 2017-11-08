@@ -523,7 +523,7 @@ toSection s name fs = IniSection
             , IniValue
                 { vLineNo = 0
                 , vName   = actualText (fdName descr)
-                , vValue  = val
+                , vValue  = " " <> val
                 , vComments = mkComments (fdComment descr)
                 , vCommentedOut = opt
                 , vDelimiter = '='
@@ -669,7 +669,7 @@ emitNewFields s def fields pol = go (Seq.viewl fields) where
                 , IniValue
                   { vLineNo       = 0
                   , vName         = actualText (fdName d)
-                  , vValue        = fvEmit (fdValue d) (get l s)
+                  , vValue        = " " <> fvEmit (fdValue d) (get l s)
                   , vComments     = cs
                   , vCommentedOut = False
                   , vDelimiter    = '='
