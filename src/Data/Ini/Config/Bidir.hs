@@ -1,3 +1,134 @@
+{-|
+Module     : Data.Ini.Config.Bidir
+Copyright  : (c) Getty Ritter, 2017
+License    : BSD
+Maintainer : Getty Ritter <config-ini@infinitenegativeutility.com>
+Stability  : experimental
+
+This module presents an alternate API for parsing INI files.  Unlike
+the standard API, it is bidirectional: the same declarative structure
+can be used to parse an INI file to a value, serialize an INI file
+from a value, or even /update/ an INI file by comparing it against a
+value and serializing in a way that minimizes the differences between
+revisions of the file.
+
+This API does make some extra assumptions about your configuration
+type and the way you interact with it: in particular, it assumes that
+you have lenses for all the fields you're parsing and that you have
+some kind of sensible default value of that configuration
+type. Instead of providing combinators which can extract and parse a
+field of an INI file into a value, the bidirectional API allows you to
+declaratively associate a lens into your structure with a field of the
+INI file.
+
+Consider the following example INI file:
+
+> [NETWORK]
+> host = example.com
+> port = 7878
+>
+> [LOCAL]
+> user = terry
+
+We'd like to parse this INI file into a @Config@ type which we've
+defined like this, using
+<https://hackage.haskell.org/package/lens lens> or a similar library
+to provide lenses:
+
+> data Config = Config
+>   { _cfHost :: String
+>   , _cfPort :: Int
+>   , _cfUser :: Maybe Text
+>   } deriving (Eq, Show)
+>
+> ''makeLenses Config
+
+We can now define a basic specification of the type @'IniSpec' Config
+()@ by using the provided operations to declare our top-level
+sections, and then within those sections we can associate fields with
+@Config@ lenses.
+
+@
+'configSpec' :: 'IniSpec' Config ()
+'configSpec' = do
+  'section' \"NETWORK\" $ do
+    cfHost '.=' 'field' \"host\" 'string'
+    cfPost '.=' 'field' \"port\" 'number'
+  'sectionOpt' \"LOCAL\" $ do
+    cfUser '.=?' 'field' \"user\" 'text'
+@
+
+There are two operators used to associate lenses with fields:
+
+['.='] Associates a lens of type @Lens' s a@ with a field description
+       of type @FieldDescription a@. By default, this will raise an
+       error when parsing if the field described is missing, but we
+       can mark it as optional, as we'll see.
+
+['.=?'] Associates a lens of type @Lens' s (Maybe a)@ with a field
+        description of type @FieldDescription a@. During parsing, if
+        the value does not appear in an INI file, then the lens will
+        be set to 'Nothing'; similarly, during serializing, if the
+        value is 'Nothing', then the field will not be serialized in
+        the file.
+
+Each field must include the field's name as well as a 'FieldValue',
+which describes how to both parse and serialize a value of a given
+type. Several built-in 'FieldValue' descriptions are provided, but you
+can always build your own by providing parsing and serialization
+functions for individual fields.
+
+We can also provide extra metadata about a field, allowing it to be
+skipped durin parsing, or to provide an explicit default value, or to
+include an explanatory comment for that value to be used when we
+serialize an INI file. These are conventionally applied to the field
+using the '&' operator:
+
+@
+configSpec :: 'IniSpec' Config ()
+configSpec = do
+  'section' \"NETWORK\" $ do
+    cfHost '.=' 'field' \"host\" 'string'
+                & 'comment' [\"The desired hostname (optional)\"]
+                & 'skipIfMissing'
+    cfPost '.=' 'field' \"port\" 'number'
+                & 'comment' [\"The port number\"]
+  'sectionOpt' \"LOCAL\" $ do
+    cfUser '.=?' 'field' \"user\" 'text'
+@
+
+When we want to use this specification, we need to create a value of
+type 'Ini', which is an abstract representation of an INI
+specification. To create an 'Ini' value, we need to use the 'ini'
+function, which combines the spec with the default version of our
+configuration value.
+
+Once we have a value of type 'Ini', we can use it for three basic
+operations:
+
+* We can parse a textual INI file with 'parseIni', which will
+  systematically walk the spec and use the provided lens/field
+  associations to create a parsed configuration file. This will give
+  us a new value of type 'Ini' that represents the parsed
+  configuration, and we can extract the actual configuration value
+  with 'getIniValue'.
+
+* We can update the value contained in an 'Ini' value. If the 'Ini'
+  value is the result of a previous call to 'parseIni', then this
+  update will attempt to retain as much of the incidental structure of
+  the parsed file as it can: for example, it will attempt to retain
+  comments, whitespace, and ordering. The general strategy is to make
+  the resulting INI file "diff-minimal": the diff between the older
+  INI file and the updated INI file should contain as little noise as
+  possible. Small cosmetic choices such as how to treat generated
+  comments are controlled by a configurable 'UpdatePolicy' value.
+
+* We can serialize an 'Ini' value to a textual INI file. This will
+  produce the specified INI file (either a default fresh INI, or a
+  modified existing INI) as a textual value.
+
+-}
+
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -8,8 +139,6 @@
 
 module Data.Ini.Config.Bidir
 (
--- $main
-
 -- * Parsing, Serializing, and Updating Files
 -- $using
   Ini
@@ -195,6 +324,8 @@ updateIni new i =
     Left err -> error err
     Right i' -> i'
 
+-- | Use the provided 'UpdatePolicy' as a guide when creating future
+-- updated versions of the given 'Ini' value.
 setIniUpdatePolicy :: UpdatePolicy -> Ini s -> Ini s
 setIniUpdatePolicy pol i = i { iniPol = pol }
 
@@ -251,6 +382,7 @@ allFieldsOptional = all isOptional
   where isOptional (Field   _ fd) = fdSkipIfMissing fd
         isOptional (FieldMb _ _)  = True
 
+-- | Treat an entire section as containing entirely optional fields.
 allOptional
   :: (SectionSpec s () -> IniSpec s ())
   -> (SectionSpec s () -> IniSpec s ())
@@ -542,7 +674,9 @@ toSection s name fs = IniSection
             | otherwise =
                 mkIniValue "" descr True
 
--- | An 'UpdatePolicy' describes how to
+-- | An 'UpdatePolicy' guides certain choices made when an 'Ini' file
+-- is updated: for example, how to add comments to the generated
+-- fields, or how to treat fields which are optional.
 data UpdatePolicy = UpdatePolicy
   { updateAddOptionalFields      :: Bool
     -- ^ If 'True', then optional fields not included in the INI file
@@ -569,7 +703,7 @@ defaultUpdatePolicy = UpdatePolicy
 
 -- | An 'UpdateCommentPolicy' describes what comments should accompany
 -- a field added to or modified in an existing INI file when using
--- 'updateIniFile'.
+-- 'updateIni'.
 data UpdateCommentPolicy
   = CommentPolicyNone
     -- ^ Do not add comments to new fields
@@ -577,8 +711,8 @@ data UpdateCommentPolicy
     -- ^ Add the same comment which appears in the 'IniSpec' value for
     -- the field we're adding or modifying.
   | CommentPolicyAddDefaultComment (Seq Text)
-    -- ^ Add a consistent comment to all new fields added or modified
-    -- by an 'updateIniFile' call.
+    -- ^ Add a common comment to all new fields added or modified
+    -- by an 'updateIni' call.
     deriving (Eq, Show)
 
 getComments :: FieldDescription s -> UpdateCommentPolicy -> (Seq BlankLine)
@@ -628,7 +762,7 @@ updateSections s def sections fields pol = do
   -- First, we process all the sections that actually appear in the
   -- INI file in order
   existingSections <- F.for sections $ \ (name, sec) -> do
-    let err  = (Left ("Unexpected top-level section: " ++ show name))
+    let err  = Left ("Unexpected top-level section: " ++ show name)
     Section _ spec _ <- maybe err Right
       (F.find (\ (Section n _ _) -> n == name) fields)
     newVals <- updateFields s (isVals sec) spec pol
@@ -793,111 +927,6 @@ updateFields s values fields pol = go (Seq.viewl values) fields
                    Just v  -> Just (val { vValue = " " <> fvEmit (fdValue descr) v })
                    Nothing -> Nothing
 
-
-{- $main
-
-This module presents an alternate API for parsing INI files.  Unlike
-the standard API, it is bidirectional: the same declarative structure
-can be used to parse an INI file to a value, serialize an INI file
-from a value, or even /update/ an INI file by comparing it against a
-value and serializing in a way that minimizes the differences between
-revisions of the file.
-
-This API does make some extra assumptions about your configuration
-type and the way you interact with it: in particular, it assumes that
-you have lenses for all the fields you're parsing, and that you have
-some kind of sensible default value of that configuration
-type. Instead of providing combinators which can extract and parse a
-field of an INI file into a value, the bidirectional API allows you to
-declaratively associate a lens into your structure with a field of the
-INI file.
-
-Consider the following example INI file:
-
-> [NETWORK]
-> host = example.com
-> port = 7878
->
-> [LOCAL]
-> user = terry
-
-We'd like to parse this INI file into a @Config@ type which we've
-defined like this, using
-<https://hackage.haskell.org/package/lens lens> or a similar library
-to provide lenses:
-
-> data Config = Config
->   { _cfHost :: String
->   , _cfPort :: Int
->   , _cfUser :: Maybe Text
->   } deriving (Eq, Show)
->
-> ''makeLenses Config
-
-We can now define a basic specification of the type @'IniSpec' Config
-()@ by using the provided operations to declare our top-level
-sections, and then within those sections associate fields with lenses
-into our @Config@ structure.
-
-@
-'configSpec' :: 'IniSpec' Config ()
-'configSpec' = do
-  'section' \"NETWORK\" $ do
-    cfHost '.=' 'field' \"host\" 'string'
-    cfPost '.=' 'field' \"port\" 'number'
-  'sectionOpt' \"LOCAL\" $ do
-    cfUser '.=?' 'field' \"user\" 'text'
-@
-
-There are two operators used to associate lenses with fields:
-
-['.='] Associates a lens of type @Lens' s a@ with a field description
-       of type @FieldDescription a@
-
-['.=?'] Associates a lens of type @Lens' s (Maybe a)@ with a field
-        description of type @FieldDescription a@. If the value does
-        not appear in an INI file, then the lens will be set to
-        'Nothing'; similarly, if the value is 'Nothing', then the
-        field will not be serialized in the file.
-
-Each field must include the field's name as well as a 'FieldValue',
-which describes how to both parse and serialize a value of a given
-type. Several built-in 'FieldValue' descriptions are provided, but you
-can always build your own by providing parsing and serialization
-functions for individual fields.
-
-We can also provide extra metadata about a field, allowing it to be
-skipped in parsing, or to provide an explicit default value, or to
-include an explanatory comment for that value to be used when we
-serialize an INI file. These are conventionally applied to the field
-using the '&' operator:
-
-@
-configSpec :: 'IniSpec' Config ()
-configSpec = do
-  'section' \"NETWORK\" $ do
-    cfHost '.=' 'field' \"host\" 'string'
-                & 'comment' [\"The desired hostname (optional)\"]
-                & 'skipIfMissing'
-    cfPost '.=' 'field' \"port\" 'number'
-                & 'comment' [\"The port number\"]
-  'sectionOpt' \"LOCAL\" $ do
-    cfUser '.=?' 'field' \"user\" 'text'
-@
-
-In order to parse an INI file, we need to provide a default value of
-our underlying @Config@ type on which we can perform our 'Lens'-based
-updates. Parsing will then walk the specification and update each
-field in the default value to the field provided in the INI file. We
-can also use a value of our @Config@ type and serialize it directly,
-which is useful for generating a default configuration: this will
-include the comments we've provided and (optionally) commented-out
-key-value pairs representing default values. Finally, we can /update/
-a configuration file, reflecting changes to a value back to an
-existing INI file in a way that preserves incidental structure like
-spacing and comments.
-
--}
 
 -- $using
 -- Functions for parsing, serializing, and updating INI files.

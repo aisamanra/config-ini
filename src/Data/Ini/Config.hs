@@ -1,10 +1,71 @@
+{-|
+Module     : Data.Ini.Config
+Copyright  : (c) Getty Ritter, 2017
+License    : BSD
+Maintainer : Getty Ritter <config-ini@infinitenegativeutility.com>
+Stability  : experimental
+
+The 'config-ini' library exports some simple monadic functions to
+make parsing INI-like configuration easier. INI files have a
+two-level structure: the top-level named chunks of configuration,
+and the individual key-value pairs contained within those chunks.
+For example, the following INI file has two sections, @NETWORK@
+and @LOCAL@, and each contains its own key-value pairs. Comments,
+which begin with @#@ or @;@, are ignored:
+--
+> [NETWORK]
+> host = example.com
+> port = 7878
+>
+> # here is a comment
+> [LOCAL]
+> user = terry
+--
+The combinators provided here are designed to write quick and
+idiomatic parsers for files of this form. Sections are parsed by
+'IniParser' computations, like 'section' and its variations,
+while the fields within sections are parsed by 'SectionParser'
+computations, like 'field' and its variations. If we want to
+parse an INI file like the one above, treating the entire
+@LOCAL@ section as optional, we can write it like this:
+--
+> data Config = Config
+>   { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
+>     deriving (Eq, Show)
+>
+> data NetworkConfig = NetworkConfig
+>   { netHost :: String, netPort :: Int }
+>     deriving (Eq, Show)
+>
+> data LocalConfig = LocalConfig
+>   { localUser :: Text }
+>     deriving (Eq, Show)
+>
+> configParser :: IniParser Config
+> configParser = do
+>   netCf <- section "NETWORK" $ do
+>     host <- fieldOf "host" string
+>     port <- fieldOf "port" number
+>     return NetworkConfig { netHost = host, netPort = port }
+>   locCf <- sectionMb "LOCAL" $
+>     LocalConfig <$> field "user"
+>   return Config { cfNetwork = netCf, cfLocal = locCf }
+--
+We can run our computation with 'parseIniFile', which,
+when run on our example file above, would produce the
+following:
+--
+>>> parseIniFile example configParser
+Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})
+
+-}
+
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Data.Ini.Config
 (
--- $main
 -- * Parsing Files
   parseIniFile
 -- * Parser Types
@@ -376,57 +437,3 @@ listWithSeparator sep rd =
 -- >>> :{
 --    let example = "[NETWORK]\nhost = example.com\nport = 7878\n\n# here is a comment\n[LOCAL]\nuser = terry\n"
 -- >>> :}
-
--- $main
--- The 'config-ini' library exports some simple monadic functions to
--- make parsing INI-like configuration easier. INI files have a
--- two-level structure: the top-level named chunks of configuration,
--- and the individual key-value pairs contained within those chunks.
--- For example, the following INI file has two sections, @NETWORK@
--- and @LOCAL@, and each contains its own key-value pairs. Comments,
--- which begin with @#@ or @;@, are ignored:
---
--- > [NETWORK]
--- > host = example.com
--- > port = 7878
--- >
--- > # here is a comment
--- > [LOCAL]
--- > user = terry
---
--- The combinators provided here are designed to write quick and
--- idiomatic parsers for files of this form. Sections are parsed by
--- 'IniParser' computations, like 'section' and its variations,
--- while the fields within sections are parsed by 'SectionParser'
--- computations, like 'field' and its variations. If we want to
--- parse an INI file like the one above, treating the entire
--- @LOCAL@ section as optional, we can write it like this:
---
--- > data Config = Config
--- >   { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
--- >     deriving (Eq, Show)
--- >
--- > data NetworkConfig = NetworkConfig
--- >   { netHost :: String, netPort :: Int }
--- >     deriving (Eq, Show)
--- >
--- > data LocalConfig = LocalConfig
--- >   { localUser :: Text }
--- >     deriving (Eq, Show)
--- >
--- > configParser :: IniParser Config
--- > configParser = do
--- >   netCf <- section "NETWORK" $ do
--- >     host <- fieldOf "host" string
--- >     port <- fieldOf "port" number
--- >     return NetworkConfig { netHost = host, netPort = port }
--- >   locCf <- sectionMb "LOCAL" $
--- >     LocalConfig <$> field "user"
--- >   return Config { cfNetwork = netCf, cfLocal = locCf }
---
--- We can run our computation with 'parseIniFile', which,
--- when run on our example file above, would produce the
--- following:
---
--- >>> parseIniFile example configParser
--- Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})

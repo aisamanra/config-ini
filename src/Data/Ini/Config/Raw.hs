@@ -1,7 +1,16 @@
-module Data.Ini.Config.Raw
-( -- $main
+{-|
+Module     : Data.Ini.Config.Raw
+Copyright  : (c) Getty Ritter, 2017
+License    : BSD
+Maintainer : Getty Ritter <config-ini@infinitenegativeutility.com>
+Stability  : experimental
 
-  -- * INI types
+__Warning!__ This module is subject to change in the future, and therefore should
+not be relied upon to have a consistent API.
+
+-}
+module Data.Ini.Config.Raw
+( -- * INI types
   RawIni(..)
 , IniSection(..)
 , IniValue(..)
@@ -32,11 +41,26 @@ import           Text.Megaparsec.Char
 
 type Parser = Parsec (ErrorFancy Void) Text
 
+-- | The 'NormalizedText' type is an abstract representation of text
+-- which has had leading and trailing whitespace removed and been
+-- normalized to lower-case, but from which we can still extract the
+-- original, non-normalized version. This acts like the normalized
+-- text for the purposes of 'Eq' and 'Ord' operations, so
+--
+-- @
+--   'normalize' "  x  " == 'normalize' \"X\"
+-- @
+--
+-- This type is used to store section and key names in the
 data NormalizedText = NormalizedText
   { actualText     :: Text
   , normalizedText :: Text
   } deriving (Show)
 
+-- | The constructor function to build a 'NormalizedText' value. You
+-- probably shouldn't be using this module directly, but if for some
+-- reason you are using it, then you should be using this function to
+-- create 'NormalizedText' values.
 normalize :: Text -> NormalizedText
 normalize t = NormalizedText t (T.toLower (T.strip t))
 
@@ -253,10 +277,3 @@ lookupValue :: Text
             -> Seq.Seq IniValue
 lookupValue name section =
     snd <$> Seq.filter ((== normalize name) . fst) (isVals section)
-
-{- $main
-
-__Warning!__ This module is subject to change in the future, and therefore should
-not be relied upon to have a consistent API.
-
--}
