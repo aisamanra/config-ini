@@ -1,6 +1,6 @@
 # `config-ini`
 
-[![Hackage](https://img.shields.io/hackage/v/config-ini.svg)](https://hackagehaskell.org/package/config-ini)
+[![Hackage](https://img.shields.io/hackage/v/config-ini.svg)](https://hackage.haskell.org/package/config-ini)
 
 The `config-ini` library is a Haskell library for doing elementary INI file parsing in a quick and painless way.
 
