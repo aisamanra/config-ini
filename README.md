@@ -53,7 +53,7 @@ We can run our computation with `parseIniFile`, which, when run on our example f
 Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})
 ~~~
 
-## Setter- and Lens-Based Usage
+## Bidirectional Usage
 
 The above example had an INI file split into two sections (`NETWORK` and `LOCAL`) and a data type with a corresponding structure (containing a `NetworkConfig` and `Maybe LocalConfig` field), which allowed each `section`-level parser to construct a chunk of the configuration and then combine them. This works well if our configuration file has the same structure as our data type, but that might not be what we want. Let's imagine we want to construct our `Config` type as a flat record like this:
 
@@ -78,7 +78,7 @@ configParser = do
   return (Config host port user)
 ~~~
 
-This is unfortunately awkward and repetitive. An alternative is to flatten it out by repeating invocations of `section` like below, but this has its own problems, such as unnecessary repetition of the `"NETWORK"` string literal, unnecessarily repetitive table lookups, and general verbosity:
+This is unfortunately awkward and repetitive. An alternative is to flatten it out by repeating invocations of `section` like below, but this has its own problems, such as unnecessary repetition of the `"NETWORK"` string literal, unnecessarily repetitive lookups, and general verbosity:
 
 ~~~.haskell
 configParser :: IniParser Config
@@ -89,39 +89,56 @@ configParser = do
   return (Config host port user)
 ~~~
 
-In situations like these, you can instead use the `Data.Ini.Config.St` module, which provides a slightly different abstraction: the functions exported by this module assume that you start with a default configuration value, and parsing a field allows you to _update_ that configuration with the value of a field. The monads exported by this module have an extra type parameter that represents the type of the value being updated. The easiest way to use this module is by combining lenses with the `.=` and `.=?` operators, which take a lens and a normal `SectionParser` value, and produce a `SectionStParser` value that uses the lens to update the underlying type:
+In situations like these, you can instead use the `Data.Ini.Config.Bidir` module, which provides a slightly different abstraction: the functions exported by this module assume that you start with a default configuration value, and parsing a field allows you to _update_ that configuration with the value of a field. The monads exported by this module have an extra type parameter that represents the type of the value being updated. The easiest way to use this module is by combining lenses with the `.=` and `.=?` operators, which take a lens and a description of a field, and produce a `SectionSpec` value that uses the provided lens to update the underlying type when parsing:
 
 ~~~.haskell
 makeLenses ''Config
 
-configParser :: IniStParser Config ()
+configParser :: IniSpec Config ()
 configParser = do
-  sectionSt "NETWORK" $ do
-    cfHost .= fieldOf "host" string
-    cfPort .= fieldOf "port" number
-  sectionSt "LOCAL" $ do
-    cfUser .= fieldMb "user"
+  section "NETWORK" $ do
+    cfHost .=  field "host" string
+    cfPort .=  field "port" number
+  section "LOCAL" $ do
+    cfUser .=? field "user"
 ~~~
 
-In order to use this parser, we will need to provide an existing value of `Config` so we can apply our updates to it. This is the biggest downside to this approach: in this case, even though the `host` and `port` fields are obligatory and will be overwritten by the parser, we still need to provide dummy values for them.
+In order to use this as a parser, we will need to provide an existing value of `Config` so we can apply our updates to it. We combine the `IniSpec` defined above with a default config
 
 ~~~.haskell
+configIni :: Ini Config
+configIni =
+  let defConfig = Config "localhost" 8080 Nothing
+  in ini defConfig configParser
+
 myParseIni :: Text -> Either String Config
-myParseIni t = parseIniFileSt t defaultConfig configParser
-  where defaultConfig = Config "unset" 0 Nothing
+myParseIni t = fmap getIniValue (parseIni t configIni)
 ~~~
 
-The `IniStParser` implementation isn't tied to lenses, and many of the functions exported by `Data.Ini.Config.St` expected any generic function of the type `a -> s -> s`, and not a lens specifically. If we didn't want to use lenses, we can still take advantage of this library, albeit in a more verbose way:
+This approach gives us other advantages, too. Each of the defined fields can be associated with some various pieces of metadata, marking them as optional for the purpose of parsing or associating a comment with them.
 
 ~~~.haskell
-configParser :: IniStParser Config ()
-configParser = do
-  sectionSt "NETWORK" $ do
-    fieldOfSt "host" string (\ h s -> s { _cfHost = h })
-    fieldOfSt "port" number (\ p s -> s { _cfPort = p })
-  sectionSt "LOCAL" $ do
-    fieldMbSt "user" (\ u s -> s { _cfUser = u })
+
+configParser' :: IniSpec Config ()
+configParser' = do
+  section "NETWORK" $ do
+    cfHost .=  field "host" string
+      & comment ["The desired hostname"]
+      & optional
+    cfPort .=  field "port" number
+      & comment ["The port for the server"]
+  section "LOCAL" $ do
+    cfUser .=? field "user"
+      & comment ["The username"]
 ~~~
+
+When we create an ini from this `IniSpec`, we can serialize it directly to get a "default" INI file, one which contains the supplied comments on each field. This is useful if our application wants to produce a default configuration from the same declarative specification as before.
+
+This approach also enables another, much more powerful feature: this enables us to perform a _diff-minimal update_. You'll notice that our `parseIni` function here doesn't give us back the value directly, but rather yet another `Ini` value from which we had to extract the value. This is because the `Ini` value also records incidental formatting choices of the input file: whitespace, comments, specifics of capitalization, and so forth. When we serialize an INI file that was returned by `parseIni`, we will get out _literally the same file_ that we put in, complete with incidental formatting choices retained.
+
+But we can also use that file and update it using the `updateIni` function: this takes a configuration value and a previous `Ini` value and builds a new `Ini` value such that as much structure as possible is retained from the original `Ini`. This means that if we parse a file, update a single field, and reserialize, that file should differ only in the field we changed _and that's it_: fields will stay in the same order (with new fields being added to the end of sections), comments will be retained, incidental whitespace will stay as it is.
+
+This is a useful tool if you're building an application that has both a human-readable configuration as well the ability to set configuration values from within the application itself. This will allow you to rewrite the configuration file while minimizing lossy changes to a possibly-hand-edited possibly-checked-into-git configuration file.
 
 ## Combinators and Conventions
 
