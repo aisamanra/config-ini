@@ -90,7 +90,7 @@ configSpec = do
   'section' \"NETWORK\" $ do
     cfHost '.=' 'field' \"host\" 'string'
                 & 'comment' [\"The desired hostname (optional)\"]
-                & 'skipIfMissing'
+                & 'optional'
     cfPost '.=' 'field' \"port\" 'number'
                 & 'comment' [\"The port number\"]
   'sectionOpt' \"LOCAL\" $ do
@@ -471,18 +471,19 @@ comment cmt fd = fd { fdComment = Seq.fromList cmt }
 --   placeholder text as a value, so a spec that includes
 --
 --   @
---   myLens .=? field "x" & placeholderValue "<val>"
+--   myLens .=? field "x" & placeholderValue "\<val\>"
 --   @
 --
 --   will serialize into an INI file that contains the line
 --
 --   @
---   # x = <val>
+--   # x = \<val\>
 --   @
 --
---   A placeholder value will only appear in the serialized output
---   if the field is optional, but will be preferred over serializing
---   a "defaultValue". If a "placeholderValue" is not
+--   A placeholder value will only appear in the serialized output if
+--   the field is optional, but will be preferred over serializing the
+--   default value for an optional field. This will not affect INI
+--   file updates.
 placeholderValue :: Text -> FieldDescription t -> FieldDescription t
 placeholderValue t fd = fd { fdDummy = Just t }
 
