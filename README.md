@@ -1,6 +1,6 @@
 # `config-ini`
 
-[![Hackage](https://img.shields.io/hackage/v/config-ini.svg)](https://hackage.haskell.org/package/config-ini)
+[![Hackage](https://img.shields.io/hackage/v/config-ini.svg)](https://hackagehaskell.org/package/config-ini)
 
 The `config-ini` library is a Haskell library for doing elementary INI file parsing in a quick and painless way.
 
@@ -20,7 +20,7 @@ user = terry
 
 The combinators provided here are designed to write quick and idiomatic parsers for basic INI files. Sections are parsed by `IniParser` computations, like `section` and its variations, while the fields within sections are parsed by `SectionParser` computations, like `field` and its variations. If we want to parse an INI file like the one above, treating the entire `LOCAL` section as optional, we can write it like this:
 
-~~~.haskell
+~~~haskell
 data Config = Config
   { cfNetwork :: NetworkConfig
   , cfLocal :: Maybe LocalConfig
@@ -48,7 +48,7 @@ configParser = do
 
 We can run our computation with `parseIniFile`, which, when run on our example file above, would produce the following:
 
-~~~.haskell
+~~~haskell
 >>> parseIniFile example configParser
 Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})
 ~~~
@@ -57,7 +57,7 @@ Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 787
 
 The above example had an INI file split into two sections (`NETWORK` and `LOCAL`) and a data type with a corresponding structure (containing a `NetworkConfig` and `Maybe LocalConfig` field), which allowed each `section`-level parser to construct a chunk of the configuration and then combine them. This works well if our configuration file has the same structure as our data type, but that might not be what we want. Let's imagine we want to construct our `Config` type as a flat record like this:
 
-~~~.haskell
+~~~haskell
 data Config = Config
   { _cfHost :: String
   , _cfPort :: Int
@@ -67,7 +67,7 @@ data Config = Config
 
 In this case, we can't construct a `Config` value until we've parsed all three fields in two distinct subsections. One way of doing this is to return the intermediate values from our `section` parsers and construct the `Config` value at the end, once we have all three of its fields:
 
-~~~.haskell
+~~~haskell
 configParser :: IniParser Config
 configParser = do
   (host, port) <- section "NETWORK" $ do
@@ -80,7 +80,7 @@ configParser = do
 
 This is unfortunately awkward and repetitive. An alternative is to flatten it out by repeating invocations of `section` like below, but this has its own problems, such as unnecessary repetition of the `"NETWORK"` string literal, unnecessarily repetitive lookups, and general verbosity:
 
-~~~.haskell
+~~~haskell
 configParser :: IniParser Config
 configParser = do
   host <- section "NETWORK" $ fieldOf "host" string
@@ -91,7 +91,7 @@ configParser = do
 
 In situations like these, you can instead use the `Data.Ini.Config.Bidir` module, which provides a slightly different abstraction: the functions exported by this module assume that you start with a default configuration value, and parsing a field allows you to _update_ that configuration with the value of a field. The monads exported by this module have an extra type parameter that represents the type of the value being updated. The easiest way to use this module is by combining lenses with the `.=` and `.=?` operators, which take a lens and a description of a field, and produce a `SectionSpec` value that uses the provided lens to update the underlying type when parsing:
 
-~~~.haskell
+~~~haskell
 makeLenses ''Config
 
 configParser :: IniSpec Config ()
@@ -105,7 +105,7 @@ configParser = do
 
 In order to use this as a parser, we will need to provide an existing value of `Config` so we can apply our updates to it. We combine the `IniSpec` defined above with a default config
 
-~~~.haskell
+~~~haskell
 configIni :: Ini Config
 configIni =
   let defConfig = Config "localhost" 8080 Nothing
@@ -117,7 +117,7 @@ myParseIni t = fmap getIniValue (parseIni t configIni)
 
 This approach gives us other advantages, too. Each of the defined fields can be associated with some various pieces of metadata, marking them as optional for the purpose of parsing or associating a comment with them.
 
-~~~.haskell
+~~~haskell
 
 configParser' :: IniSpec Config ()
 configParser' = do
