@@ -1,5 +1,5 @@
 name:             config-ini
-version:          0.2.0.0
+version:          0.2.0.1
 synopsis:         A library for simple INI-based configuration files.
 homepage:         https://github.com/aisamanra/config-ini
 bug-reports:      https://github.com/aisamanra/config-ini/issues
@@ -25,7 +25,9 @@ cabal-version:    >= 1.18
 bug-reports:      https://github.com/aisamanra/config-ini/issues
 extra-source-files:
   README.md,
-  CHANGELOG.md
+  CHANGELOG.md,
+  test/prewritten/cases/*.hs,
+  test/prewritten/cases/*.ini
 
 source-repository head
   type: git
