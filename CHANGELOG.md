@@ -1,3 +1,8 @@
+0.2.0.1
+=======
+
+- Include prewritten test cases in distributed package
+
 0.2.0.0
 =======
 
