@@ -1,3 +1,8 @@
+0.2.1.1
+=======
+
+- Fix doctest pointing at deprecated API
+
 0.2.1.0
 =======
 
