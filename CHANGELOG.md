@@ -1,3 +1,9 @@
+0.2.1.0
+=======
+
+- Fix regression in standard API where values would be reported with
+  extraneous whitespace
+
 0.2.0.1
 =======
 

@@ -1,5 +1,5 @@
 name:             config-ini
-version:          0.2.0.1
+version:          0.2.1.0
 synopsis:         A library for simple INI-based configuration files.
 homepage:         https://github.com/aisamanra/config-ini
 bug-reports:      https://github.com/aisamanra/config-ini/issues
