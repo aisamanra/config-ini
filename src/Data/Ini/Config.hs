@@ -203,6 +203,9 @@ rawField name = do
                       " in section " ++ show sec)
     Just x  -> return x
 
+getVal :: IniValue -> Text
+getVal = T.strip . vValue
+
 -- | Retrieve a field, failing if it doesn't exist, and return its raw value.
 --
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (field "x")
@@ -210,7 +213,7 @@ rawField name = do
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (field "y")
 --   Left "Missing field \"y\" in section \"MAIN\""
 field :: Text -> SectionParser Text
-field name = SectionParser $ vValue `fmap` rawField name
+field name = SectionParser $ getVal `fmap` rawField name
 
 -- | Retrieve a field and use the supplied parser to parse it as a value,
 --   failing if the field does not exist, or if the parser fails to
@@ -226,7 +229,7 @@ fieldOf :: Text -> (Text -> Either String a) -> SectionParser a
 fieldOf name parse = SectionParser $ do
   sec <- getSectionName
   val <- rawField name
-  case parse (vValue val) of
+  case parse (getVal val) of
     Left err -> addLineInformation (vLineNo val) sec (throw err)
     Right x  -> return x
 
@@ -237,7 +240,7 @@ fieldOf name parse = SectionParser $ do
 --   >>> parseIniFile "[MAIN]\nx = hello\n" $ section "MAIN" (fieldMb "y")
 --   Right Nothing
 fieldMb :: Text -> SectionParser (Maybe Text)
-fieldMb name = SectionParser $ fmap vValue `fmap` rawFieldMb name
+fieldMb name = SectionParser $ fmap getVal `fmap` rawFieldMb name
 
 -- | Retrieve a field and parse it according to the given parser, returning
 --   @Nothing@ if it does not exist. If the parser fails, then this will
@@ -255,7 +258,7 @@ fieldMbOf name parse = SectionParser $ do
   mb <- rawFieldMb name
   case mb of
     Nothing  -> return Nothing
-    Just v -> case parse (vValue v) of
+    Just v -> case parse (getVal v) of
       Left err -> addLineInformation (vLineNo v) sec (throw err)
       Right x  -> return (Just x)
 
@@ -269,7 +272,7 @@ fieldDef :: Text -> Text -> SectionParser Text
 fieldDef name def = SectionParser $ ExceptT $ \m ->
   case lkp (normalize name) (isVals m) of
     Nothing -> return def
-    Just x  -> return (vValue x)
+    Just x  -> return (getVal x)
 
 -- | Retrieve a field, parsing it according to the given parser, and returning
 --   a default value if it does not exist. If the parser fails, then this will
@@ -287,7 +290,7 @@ fieldDefOf name parse def = SectionParser $ do
   mb <- rawFieldMb name
   case mb of
     Nothing  -> return def
-    Just v -> case parse (vValue v) of
+    Just v -> case parse (getVal v) of
       Left err -> addLineInformation (vLineNo v) sec (throw err)
       Right x  -> return x
 
@@ -395,7 +398,7 @@ flag s = case T.toLower s of
 --   >>> listWithSeparator ":" string "/bin:/usr/bin" :: Either String [FilePath]
 --   Right ["/bin","/usr/bin"]
 --   >>> listWithSeparator "," number "7 8 9" :: Either String [Int]
---   Left "Unable to parse \"2 3 4\" as a value of type Int"
+--   Left "Unable to parse \"7 8 9\" as a value of type Int"
 listWithSeparator :: (IsList l)
                   => Text
                   -> (Text -> Either String (Item l))
