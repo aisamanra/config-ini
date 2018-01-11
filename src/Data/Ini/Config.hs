@@ -12,7 +12,7 @@ and the individual key-value pairs contained within those chunks.
 For example, the following INI file has two sections, @NETWORK@
 and @LOCAL@, and each contains its own key-value pairs. Comments,
 which begin with @#@ or @;@, are ignored:
---
+
 > [NETWORK]
 > host = example.com
 > port = 7878
@@ -20,7 +20,7 @@ which begin with @#@ or @;@, are ignored:
 > # here is a comment
 > [LOCAL]
 > user = terry
---
+
 The combinators provided here are designed to write quick and
 idiomatic parsers for files of this form. Sections are parsed by
 'IniParser' computations, like 'section' and its variations,
@@ -28,7 +28,7 @@ while the fields within sections are parsed by 'SectionParser'
 computations, like 'field' and its variations. If we want to
 parse an INI file like the one above, treating the entire
 @LOCAL@ section as optional, we can write it like this:
---
+
 > data Config = Config
 >   { cfNetwork :: NetworkConfig, cfLocal :: Maybe LocalConfig }
 >     deriving (Eq, Show)
@@ -50,11 +50,12 @@ parse an INI file like the one above, treating the entire
 >   locCf <- sectionMb "LOCAL" $
 >     LocalConfig <$> field "user"
 >   return Config { cfNetwork = netCf, cfLocal = locCf }
---
+
+
 We can run our computation with 'parseIniFile', which,
 when run on our example file above, would produce the
 following:
---
+
 >>> parseIniFile example configParser
 Right (Config {cfNetwork = NetworkConfig {netHost = "example.com", netPort = 7878}, cfLocal = Just (LocalConfig {localUser = "terry"})})
 
@@ -73,6 +74,9 @@ module Data.Ini.Config
 , SectionParser
 -- * Section-Level Parsing
 , section
+, sections
+, sectionOf
+, sectionsOf
 , sectionMb
 , sectionDef
 -- * Field-Level Parsing
@@ -149,6 +153,65 @@ section name (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
   case lkp (normalize name) ini of
     Nothing  -> Left ("No top-level section named " ++ show name)
     Just sec -> runExceptT thunk sec
+
+-- | Find multiple named sections in the INI file and parse them all
+--   with the provided section parser. In order to support classic INI
+--   files with capitalized section names, section lookup is
+--   __case-insensitive__.
+--
+--   >>> parseIniFile "[ONE]\nx = hello\n[ONE]\nx = goodbye\n" $ sections "ONE" (field "x")
+--   Right (fromList ["hello","goodbye"])
+--   >>> parseIniFile "[ONE]\nx = hello\n" $ sections "TWO" (field "x")
+--   Right (fromList [])
+sections :: Text -> SectionParser a -> IniParser (Seq a)
+sections name (SectionParser thunk) = IniParser $ ExceptT $ \(RawIni ini) ->
+  let name' = normalize name
+  in mapM (runExceptT thunk . snd)
+          (Seq.filter (\ (t, _) -> t == name') ini)
+
+-- | A call to @sectionOf f@ will apply @f@ to each section name and,
+--   if @f@ produces a "Just" value, pass the extracted value in order
+--   to get the "SectionParser" to use for that section. This will
+--   find at most one section, and will produce an error if no section
+--   exists.
+--
+--   >>> parseIniFile "[FOO]\nx = hello\n" $ sectionOf (T.stripSuffix "OO") (\ l -> fmap ((,) l) (field "x"))
+--   Right ("F","hello")
+--   >>> parseIniFile "[BAR]\nx = hello\n" $ sectionOf (T.stripSuffix "OO") (\ l -> fmap ((,) l) (field "x"))
+--   Left "No matching top-level section"
+sectionOf :: (Text -> Maybe b) -> (b -> SectionParser a) -> IniParser a
+sectionOf fn sectionParser = IniParser $ ExceptT $ \(RawIni ini) ->
+  let go Seq.EmptyL = Left "No matching top-level section"
+      go ((t, sec) Seq.:< rs)
+        | Just v <- fn (actualText t) =
+            let SectionParser thunk = sectionParser v
+            in runExceptT thunk sec
+        | otherwise = go (Seq.viewl rs)
+  in go (Seq.viewl ini)
+
+
+-- | A call to @sectionsOf f@ will apply @f@ to each section name and,
+--   if @f@ produces a @Just@ value, pass the extracted value in order
+--   to get the "SectionParser" to use for that section. This will
+--   return every section for which the call to @f@ produces a "Just"
+--   value.
+--
+--   >>> parseIniFile "[FOO]\nx = hello\n[BOO]\nx = goodbye\n" $ sectionsOf (T.stripSuffix "OO") (\ l -> fmap ((,) l) (field "x"))
+--   Right (fromList [("F","hello"),("B","goodbye")])
+--   >>> parseIniFile "[BAR]\nx = hello\n" $ sectionsOf (T.stripSuffix "OO") (\ l -> fmap ((,) l) (field "x"))
+--   Right (fromList [])
+sectionsOf :: (Text -> Maybe b) -> (b -> SectionParser a) -> IniParser (Seq a)
+sectionsOf fn sectionParser = IniParser $ ExceptT $ \(RawIni ini) ->
+  let go Seq.EmptyL = return Seq.empty
+      go ((t, sec) Seq.:< rs)
+        | Just v <- fn (actualText t) =
+            let SectionParser thunk = sectionParser v
+            in do
+              x <- runExceptT thunk sec
+              xs <- go (Seq.viewl rs)
+              return (x Seq.<| xs)
+        | otherwise = go (Seq.viewl rs)
+  in go (Seq.viewl ini)
 
 -- | Find a named section in the INI file and parse it with the provided
 --   section parser, returning 'Nothing' if the section does not exist.
