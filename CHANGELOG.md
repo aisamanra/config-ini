@@ -1,3 +1,10 @@
+0.2.2.0
+=======
+
+- Added `sections`, `sectionOf`, and `sectionsOf` helpers to the
+  vanilla API for more flexibility in working with section names
+- Put `test-doctest` behind a flag, which is disabled by default
+
 0.2.1.1
 =======
 
