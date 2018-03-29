@@ -144,6 +144,7 @@ module Data.Ini.Config.Bidir
   Ini
 , ini
 , getIniValue
+, iniValueL
 , getRawIni
 -- ** Parsing INI files
 , parseIni
@@ -278,6 +279,13 @@ ini def (IniSpec spec) = Ini
 -- | Get the underlying Haskell value associated with the 'Ini'.
 getIniValue :: Ini s -> s
 getIniValue = iniCurr
+
+mkLens :: (a -> b) -> (b -> a -> a) -> Lens a a b b
+mkLens get' set' f a = (`set'` a) `fmap` f (get' a)
+
+-- | The lens equivalent of 'getIniValue'
+iniValueL :: Lens (Ini s) (Ini s) s s
+iniValueL = mkLens iniCurr (\ i v -> v { iniCurr = i })
 
 -- | Get the textual representation of an 'Ini' value. If this 'Ini'
 -- value is the result of 'parseIni', then it will attempt to retain
