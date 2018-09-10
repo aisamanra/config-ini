@@ -85,3 +85,4 @@ test-suite test-doctest
   build-depends:    base
                   , doctest
                   , microlens
+                  , text
