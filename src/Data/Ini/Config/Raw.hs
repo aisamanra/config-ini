@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-|
 Module     : Data.Ini.Config.Raw
 Copyright  : (c) Getty Ritter, 2017
@@ -40,6 +41,9 @@ import           Text.Megaparsec
 import           Text.Megaparsec.Char
 
 type Parser = Parsec (ErrorFancy Void) Text
+
+instance ShowErrorComponent (ErrorFancy Void) where
+  showErrorComponent = show
 
 -- | The 'NormalizedText' type is an abstract representation of text
 -- which has had leading and trailing whitespace removed and been
@@ -146,7 +150,7 @@ data BlankLine
 -- amount of structure as needed to reconstruct the original INI file.
 parseRawIni :: Text -> Either String RawIni
 parseRawIni t = case runParser pIni "ini file" t of
-  Left err -> Left (parseErrorPretty err)
+  Left err -> Left (errorBundlePretty err)
   Right v  -> Right v
 
 pIni :: Parser RawIni
@@ -159,8 +163,8 @@ sBlanks = Seq.fromList <$> many ((BlankLine <$ void eol) <|> sComment)
 
 sComment :: Parser BlankLine
 sComment = do
-  c <- oneOf ";#"
-  txt <- T.pack `fmap` manyTill anyChar eol
+  c <- oneOf (";#" :: String)
+  txt <- T.pack `fmap` manyTill anySingle eol
   return (CommentLine c txt)
 
 pSections :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser RawIni
@@ -171,7 +175,7 @@ pSection :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser RawIni
 pSection leading prevs = do
   start <- getCurrentLine
   void (char '[')
-  name <- T.pack `fmap` some (noneOf "[]")
+  name <- T.pack `fmap` some (noneOf ("[]" :: String))
   void (char ']')
   void eol
   comments <- sBlanks
@@ -204,9 +208,9 @@ pPairs name start leading prevs comments pairs = newPair <|> finishedSection
 pPair :: Seq BlankLine -> Parser (NormalizedText, IniValue)
 pPair leading = do
   pos <- getCurrentLine
-  key <- T.pack `fmap` some (noneOf "[]=:")
-  delim <- oneOf ":="
-  val <- T.pack `fmap` manyTill anyChar eol
+  key <- T.pack `fmap` some (noneOf ("[]=:" :: String))
+  delim <- oneOf (":=" :: String)
+  val <- T.pack `fmap` manyTill anySingle eol
   return ( normalize key
          , IniValue
              { vLineNo       = pos
@@ -218,7 +222,7 @@ pPair leading = do
              } )
 
 getCurrentLine :: Parser Int
-getCurrentLine = (fromIntegral . unPos . sourceLine) `fmap` getPosition
+getCurrentLine = (fromIntegral . unPos . sourceLine) `fmap` getSourcePos
 
 
 -- | Serialize an INI file to text, complete with any comments which
