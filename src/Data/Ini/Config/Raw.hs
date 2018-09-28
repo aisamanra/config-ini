@@ -159,7 +159,7 @@ sBlanks = Seq.fromList <$> many ((BlankLine <$ void eol) <|> sComment)
 
 sComment :: Parser BlankLine
 sComment = do
-  c <- oneOf (";#" :: String)
+  c <- oneOf ";#"
   txt <- T.pack `fmap` manyTill anySingle eol
   return (CommentLine c txt)
 
@@ -171,7 +171,7 @@ pSection :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser RawIni
 pSection leading prevs = do
   start <- getCurrentLine
   void (char '[')
-  name <- T.pack `fmap` some (noneOf ("[]" :: String))
+  name <- T.pack `fmap` some (noneOf "[]")
   void (char ']')
   void eol
   comments <- sBlanks
@@ -204,8 +204,8 @@ pPairs name start leading prevs comments pairs = newPair <|> finishedSection
 pPair :: Seq BlankLine -> Parser (NormalizedText, IniValue)
 pPair leading = do
   pos <- getCurrentLine
-  key <- T.pack `fmap` some (noneOf ("[]=:" :: String))
-  delim <- oneOf (":=" :: String)
+  key <- T.pack `fmap` some (noneOf "[]=:")
+  delim <- oneOf ":="
   val <- T.pack `fmap` manyTill anySingle eol
   return ( normalize key
          , IniValue
