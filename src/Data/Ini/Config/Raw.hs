@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-|
 Module     : Data.Ini.Config.Raw
 Copyright  : (c) Getty Ritter, 2017
@@ -40,10 +39,7 @@ import           Data.Void (Void)
 import           Text.Megaparsec
 import           Text.Megaparsec.Char
 
-type Parser = Parsec (ErrorFancy Void) Text
-
-instance ShowErrorComponent (ErrorFancy Void) where
-  showErrorComponent = show
+type Parser = Parsec Void Text
 
 -- | The 'NormalizedText' type is an abstract representation of text
 -- which has had leading and trailing whitespace removed and been
