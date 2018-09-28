@@ -21,7 +21,7 @@ maintainer:       Getty Ritter <config-ini@infinitenegativeutility.com>
 copyright:        ©2018 Getty Ritter
 category:         Configuration
 build-type:       Simple
-cabal-version:    >= 1.18
+cabal-version:    1.18
 extra-source-files:
   README.md,
   CHANGELOG.md,
