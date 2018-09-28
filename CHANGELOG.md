@@ -1,3 +1,10 @@
+0.2.3.0
+=======
+
+- Add the `iniValueL` lens for access to the underlying INI value in a
+  value of type `Ini s`
+- Bumped compatible version of `megaparsec`
+
 0.2.2.0
 =======
 
