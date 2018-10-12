@@ -1,3 +1,8 @@
+0.2.4.0
+=======
+
+- Fixed a bug that prevented `config-ini` from building with GHC 7.10
+
 0.2.3.0
 =======
 
