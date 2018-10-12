@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 {-|
 Module     : Data.Ini.Config
 Copyright  : (c) Getty Ritter, 2017
@@ -97,7 +96,7 @@ module Data.Ini.Config
 , listWithSeparator
 ) where
 
-import           Control.Applicative (Applicative(..), Alternative(..))
+import           Control.Applicative (Alternative(..))
 import           Control.Monad.Trans.Except
 import           Data.Ini.Config.Raw
 import           Data.Sequence (Seq)

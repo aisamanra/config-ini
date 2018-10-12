@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fno-warn-redundant-constraints #-}
 {-|
 Module     : Data.Ini.Config.Bidir
 Copyright  : (c) Getty Ritter, 2017
