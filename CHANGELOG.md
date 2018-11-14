@@ -2,6 +2,7 @@
 =======
 
 - Fixed a bug that prevented `config-ini` from building with GHC 7.10
+- Bumped version bounds for `containers` to enable GHC 8.6 compat
 
 0.2.3.0
 =======
