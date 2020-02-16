@@ -160,7 +160,7 @@ sBlanks = Seq.fromList <$> many ((BlankLine <$ void eol) <|> sComment)
 sComment :: Parser BlankLine
 sComment = do
   c <- oneOf ";#"
-  txt <- T.pack `fmap` manyTill anySingle eol
+  txt <- T.pack `fmap` manyTill anySingle eolOrf
   return (CommentLine c txt)
 
 pSections :: Seq BlankLine -> Seq (NormalizedText, IniSection) -> Parser RawIni
@@ -173,7 +173,7 @@ pSection leading prevs = do
   void (char '[')
   name <- T.pack `fmap` some (noneOf "[]")
   void (char ']')
-  void eol
+  eolOrf
   comments <- sBlanks
   pPairs (T.strip name) start leading prevs comments Seq.empty
 
@@ -206,7 +206,7 @@ pPair leading = do
   pos <- getCurrentLine
   key <- T.pack `fmap` some (noneOf "[]=:")
   delim <- oneOf ":="
-  val <- T.pack `fmap` manyTill anySingle eol
+  val <- T.pack `fmap` manyTill anySingle eolOrf
   return ( normalize key
          , IniValue
              { vLineNo       = pos
@@ -219,6 +219,9 @@ pPair leading = do
 
 getCurrentLine :: Parser Int
 getCurrentLine = (fromIntegral . unPos . sourceLine) `fmap` getSourcePos
+
+eolOrf :: Parser ()
+eolOrf = void eol <|> eof
 
 
 -- | Serialize an INI file to text, complete with any comments which
