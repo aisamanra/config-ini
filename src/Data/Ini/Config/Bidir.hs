@@ -210,6 +210,7 @@ import qualified Data.Traversable as F
 import           Data.Typeable (Typeable, Proxy(..), typeRep)
 import           GHC.Exts (IsList(..))
 import           Text.Read (readMaybe)
+import           Data.Maybe (fromMaybe)
 
 import           Data.Ini.Config.Raw
 
@@ -589,7 +590,7 @@ listWithSeparator sep fv = FieldValue
 pairWithSeparator :: FieldValue l -> Text -> FieldValue r -> FieldValue (l, r)
 pairWithSeparator left sep right = FieldValue
   { fvParse = \ t ->
-      let (leftChunk, rightChunk) = T.breakOn sep t
+      let (leftChunk, rightChunk) = (\a -> fromMaybe a $ T.stripPrefix sep a) <$> T.breakOn sep t
       in do
         x <- fvParse left leftChunk
         y <- fvParse right rightChunk
