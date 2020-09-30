@@ -50,8 +50,10 @@ propIniSelfEquiv = property $ do
   Right (toMaps raw) === fmap toMaps (I2.parseRawIni (I2.printRawIni raw))
 
 lower :: I1.Ini -> HashMap Text (HashMap Text Text)
-lower (I1.Ini ini) = go (fmap go ini)
-  where go hm = HM.fromList [ (T.toLower k, v) | (k, v) <- HM.toList hm ]
+lower (I1.Ini sections _) = HM.fromList
+  [ (T.toLower sectionName, HM.fromList [ (T.toLower k, v) | (k, v) <- section ])
+  | (sectionName, section) <- HM.toList sections
+  ]
 
 toMaps :: I2.RawIni -> HashMap Text (HashMap Text Text)
 toMaps (I2.RawIni m) = conv (fmap sectionToPair m)
@@ -70,8 +72,8 @@ mkIni = do
     name <- textChunk
     section <- Gen.list (Range.linear 0 10) $
       (,) <$> textChunk <*> textChunk
-    return (name, HM.fromList section)
-  return (I1.Ini (HM.fromList ss))
+    return (name, section)
+  return (I1.Ini (HM.fromList ss) [])
 
 mkComments :: Gen (Seq.Seq I2.BlankLine)
 mkComments = fmap Seq.fromList $ Gen.list (Range.linear 0 5) $
