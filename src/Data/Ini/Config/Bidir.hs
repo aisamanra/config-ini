@@ -305,10 +305,10 @@ getRawIni :: Ini s -> RawIni
 getRawIni Ini {iniLast = Just raw} = raw
 getRawIni
   Ini
-      { iniCurr = s,
-        iniSpec = spec
-      }
-     = emitIniFile s spec
+    { iniCurr = s,
+      iniSpec = spec
+    } =
+    emitIniFile s spec
 
 -- | Parse a textual representation of an 'Ini' file. If the file is
 -- malformed or if an obligatory field is not found, this will produce
@@ -822,18 +822,18 @@ updateSections s def sections fields pol = do
   let existingSectionNames = fmap fst existingSections
   newSections <- F.for fields $
     \(Section nm spec _) ->
-      if nm `elem` existingSectionNames then
-        return mempty
-      else
-        let rs = emitNewFields s def spec pol
-        in if Seq.null rs
-           then return mempty
-           else
-             return $
-             Seq.singleton
-             ( nm,
-               IniSection (actualText nm) rs 0 0 mempty
-             )
+      if nm `elem` existingSectionNames
+        then return mempty
+        else
+          let rs = emitNewFields s def spec pol
+           in if Seq.null rs
+                then return mempty
+                else
+                  return $
+                    Seq.singleton
+                      ( nm,
+                        IniSection (actualText nm) rs 0 0 mempty
+                      )
   return (existingSections <> F.asum newSections)
 
 -- We won't emit a section if everything in the section is also
