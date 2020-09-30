@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -303,13 +302,13 @@ serializeIni = printRawIni . getRawIni
 
 -- | Get the underlying 'RawIni' value for the file.
 getRawIni :: Ini s -> RawIni
-getRawIni (Ini {iniLast = Just raw}) = raw
+getRawIni Ini {iniLast = Just raw} = raw
 getRawIni
-  ( Ini
+  Ini
       { iniCurr = s,
         iniSpec = spec
       }
-    ) = emitIniFile s spec
+     = emitIniFile s spec
 
 -- | Parse a textual representation of an 'Ini' file. If the file is
 -- malformed or if an obligatory field is not found, this will produce
@@ -395,7 +394,7 @@ section name (SectionSpec mote) = IniSpec $ do
   let fields = runBidirM mote
   modify (Seq.|> Section (normalize name) fields (allFieldsOptional fields))
 
-allFieldsOptional :: (Seq (Field s)) -> Bool
+allFieldsOptional :: Seq (Field s) -> Bool
 allFieldsOptional = all isOptional
   where
     isOptional (Field _ fd) = fdSkipIfMissing fd
@@ -553,7 +552,7 @@ readable = FieldValue {fvParse = parse, fvEmit = emit}
               ++ " as a value of type "
               ++ show typ
           )
-    typ = typeRep (prx)
+    typ = typeRep prx
     prx :: Proxy a
     prx = Proxy
 
@@ -680,8 +679,7 @@ emitIniFile s spec =
       spec
 
 mkComments :: Seq Text -> Seq BlankLine
-mkComments comments =
-  fmap (\ln -> CommentLine '#' (" " <> ln)) comments
+mkComments = fmap (\ln -> CommentLine '#' (" " <> ln))
 
 toSection :: s -> Text -> Seq (Field s) -> IniSection
 toSection s name fs =
@@ -760,7 +758,7 @@ data UpdateCommentPolicy
     CommentPolicyAddDefaultComment (Seq Text)
   deriving (Eq, Show)
 
-getComments :: FieldDescription s -> UpdateCommentPolicy -> (Seq BlankLine)
+getComments :: FieldDescription s -> UpdateCommentPolicy -> Seq BlankLine
 getComments _ CommentPolicyNone = Seq.empty
 getComments f CommentPolicyAddFieldComment =
   mkComments (fdComment f)
@@ -824,18 +822,18 @@ updateSections s def sections fields pol = do
   let existingSectionNames = fmap fst existingSections
   newSections <- F.for fields $
     \(Section nm spec _) ->
-      if
-          | nm `elem` existingSectionNames -> return mempty
-          | otherwise ->
-            let rs = emitNewFields s def spec pol
-             in if Seq.null rs
-                  then return mempty
-                  else
-                    return $
-                      Seq.singleton
-                        ( nm,
-                          IniSection (actualText nm) rs 0 0 mempty
-                        )
+      if nm `elem` existingSectionNames then
+        return mempty
+      else
+        let rs = emitNewFields s def spec pol
+        in if Seq.null rs
+           then return mempty
+           else
+             return $
+             Seq.singleton
+             ( nm,
+               IniSection (actualText nm) rs 0 0 mempty
+             )
   return (existingSections <> F.asum newSections)
 
 -- We won't emit a section if everything in the section is also
@@ -954,7 +952,7 @@ updateFields s values fields pol = go (Seq.viewl values) fields
     -- were left out, but if we have any non-optional fields left
     -- over, then we definitely need to include them.
     go EmptyL fs = return (finish (Seq.viewl fs))
-    finish (f@(Field {}) :< fs)
+    finish (f@Field {} :< fs)
       | updateAddOptionalFields pol,
         Just val <- mkValue (fieldName f) f '=' =
         (fieldName f, val) <| finish (Seq.viewl fs)

@@ -264,7 +264,7 @@ lookupInSection ::
   RawIni ->
   Seq.Seq Text
 lookupInSection sec opt ini =
-  vValue <$> (F.asum (lookupValue opt <$> lookupSection sec ini))
+  vValue <$> F.asum (lookupValue opt <$> lookupSection sec ini)
 
 -- | Look up an Ini section by name. Returns a sequence of all matching
 -- section records.
@@ -276,7 +276,7 @@ lookupSection ::
   RawIni ->
   Seq.Seq IniSection
 lookupSection name ini =
-  snd <$> (Seq.filter ((== normalize name) . fst) $ fromRawIni ini)
+  snd <$> Seq.filter ((== normalize name) . fst) (fromRawIni ini)
 
 -- | Look up an Ini key's value in a given section by the key. Returns
 -- the sequence of matches.

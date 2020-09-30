@@ -260,10 +260,10 @@ sectionDef name def (SectionParser thunk) = IniParser $
 ---
 
 throw :: String -> StParser s a
-throw msg = ExceptT $ (\_ -> Left msg)
+throw msg = ExceptT (\_ -> Left msg)
 
 getSectionName :: StParser IniSection Text
-getSectionName = ExceptT $ (\m -> return (isName m))
+getSectionName = ExceptT (return . isName)
 
 rawFieldMb :: Text -> StParser IniSection (Maybe IniValue)
 rawFieldMb name = ExceptT $ \m ->
@@ -394,7 +394,7 @@ fieldFlag name = fieldOf name flag
 --   >>> parseIniFile "[MAIN]\nx = yes\n" $ section "MAIN" (fieldFlagDef "y" False)
 --   Right False
 fieldFlagDef :: Text -> Bool -> SectionParser Bool
-fieldFlagDef name def = fieldDefOf name flag def
+fieldFlagDef name = fieldDefOf name flag
 
 ---
 

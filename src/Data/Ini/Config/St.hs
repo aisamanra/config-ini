@@ -79,7 +79,7 @@ updateLens :: (Text -> Either String a) -> Lens s s a a -> Text -> Either String
 updateLens rd lens text = do
   case rd text of
     Left err -> Left err
-    Right r -> Right (\st -> set lens r st)
+    Right r -> Right (set lens r)
 
 newtype IniStParser s a = IniStParser (WriterT (Endo s) IniParser a)
   deriving (Functor, Applicative, Alternative, Monad)
