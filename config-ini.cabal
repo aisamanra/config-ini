@@ -59,7 +59,7 @@ test-suite test-ini-compat
   hs-source-dirs:   test/ini-compat
   main-is:          Main.hs
   build-depends:    base
-                  , ini >=4.0
+                  , ini >=0.4
                   , config-ini
                   , hedgehog
                   , containers
