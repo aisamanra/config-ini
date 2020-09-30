@@ -1,11 +1,11 @@
 fromList
-  [ ( "s1"
-    , fromList
-        [ ( "foo", "bar" )
-        , ( "baz", "quux" )
+  [ ( "s1",
+      fromList
+        [ ("foo", "bar"),
+          ("baz", "quux")
         ]
-    )
-  , ( "s2"
-    , fromList [ ( "argl", "bargl" ) ]
+    ),
+    ( "s2",
+      fromList [("argl", "bargl")]
     )
   ]

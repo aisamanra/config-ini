@@ -1,49 +1,55 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Data.Ini.Config.St
-(
--- $main
--- * Running Setter-Based Parsers
-  parseIniFileSt
--- * Setter-Based Parser Types
-, IniStParser
-, SectionStParser
--- * Setter-Based Section-Level Parsing
-, sectionSt
-, sectionOptSt
--- * Setter-Aware Field-Level Parsing
--- ** Using setter functions
-, setterField
-, setterFieldOpt
--- ** Using lenses
-, lensField
-, (.=)
-, lensFieldOpt
-, (.=?)
--- ** Setter-Based Field Parsing Aliases
-, fieldSt
-, fieldOfSt
-, fieldMbSt
-, fieldMbOfSt
-, fieldOptSt
-, fieldOptOfSt
-, fieldDefSt
-, fieldDefOfSt
-, fieldFlagSt
-, fieldFlagDefSt
--- * Reader Functions
-, Lens
-, updateLens
-, module Data.Ini.Config
-) where
+  ( -- $main
+    parseIniFileSt,
 
-import           Control.Applicative (Applicative(..), Alternative(..))
-import           Control.Monad.Trans.Class (lift)
-import           Control.Monad.Trans.Writer.Strict
-import           Data.Ini.Config
-import           Data.Monoid (Endo(..))
-import           Data.Text (Text)
+    -- * Setter-Based Parser Types
+    IniStParser,
+    SectionStParser,
+
+    -- * Setter-Based Section-Level Parsing
+    sectionSt,
+    sectionOptSt,
+
+    -- * Setter-Aware Field-Level Parsing
+
+    -- ** Using setter functions
+    setterField,
+    setterFieldOpt,
+
+    -- ** Using lenses
+    lensField,
+    (.=),
+    lensFieldOpt,
+    (.=?),
+
+    -- ** Setter-Based Field Parsing Aliases
+    fieldSt,
+    fieldOfSt,
+    fieldMbSt,
+    fieldMbOfSt,
+    fieldOptSt,
+    fieldOptOfSt,
+    fieldDefSt,
+    fieldDefOfSt,
+    fieldFlagSt,
+    fieldFlagDefSt,
+
+    -- * Reader Functions
+    Lens,
+    updateLens,
+    module Data.Ini.Config,
+  )
+where
+
+import Control.Applicative (Alternative (..), Applicative (..))
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Writer.Strict
+import Data.Ini.Config
+import Data.Monoid (Endo (..))
+import Data.Text (Text)
 
 -- $setup
 -- >>> type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
@@ -60,11 +66,12 @@ import           Data.Text (Text)
 type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 
 -- We need this to implement 'set' for lenses
-newtype I a = I { fromI :: a }
+newtype I a = I {fromI :: a}
+
 instance Functor I where fmap f (I a) = I (f a)
 
 set :: Lens s s a a -> a -> s -> s
-set lens x a = fromI (lens (\ _ -> I x) a)
+set lens x a = fromI (lens (\_ -> I x) a)
 
 -- | This is a function compatible with the @fieldOf@ family of functions. It allows
 --   you to parse a field and then create an update function with it.
@@ -72,7 +79,7 @@ updateLens :: (Text -> Either String a) -> Lens s s a a -> Text -> Either String
 updateLens rd lens text = do
   case rd text of
     Left err -> Left err
-    Right r  -> Right (\ st -> set lens r st)
+    Right r -> Right (\st -> set lens r st)
 
 newtype IniStParser s a = IniStParser (WriterT (Endo s) IniParser a)
   deriving (Functor, Applicative, Alternative, Monad)
@@ -95,7 +102,7 @@ sectionOptSt :: Text -> SectionStParser s () -> IniStParser s ()
 sectionOptSt name (SectionStParser thunk) = IniStParser $ do
   updateMb <- lift (sectionMb name (runWriterT thunk))
   case updateMb of
-    Nothing           -> return ()
+    Nothing -> return ()
     Just ((), update) -> tell update
 
 liftSetter :: (a -> s -> s) -> SectionParser a -> SectionStParser s ()
@@ -299,7 +306,6 @@ fieldFlagSt name setter = liftSetter setter $ fieldFlag name
 -- Right ("def",False)
 fieldFlagDefSt :: Text -> Bool -> (Bool -> s -> s) -> SectionStParser s ()
 fieldFlagDefSt name def setter = liftSetter setter $ fieldFlagDef name def
-
 
 -- $main
 -- This module is designed to be used with update functions
