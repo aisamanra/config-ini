@@ -49,7 +49,7 @@ library
                      , text                  >=1.2.2 && <1.3
                      , unordered-containers  >=0.2.7 && <0.3
                      , transformers          >=0.4.1 && <0.6
-                     , megaparsec            >=7     && <9
+                     , megaparsec            >=7     && <10
   default-language:    Haskell2010
 
 test-suite test-ini-compat
@@ -59,7 +59,7 @@ test-suite test-ini-compat
   hs-source-dirs:   test/ini-compat
   main-is:          Main.hs
   build-depends:    base
-                  , ini
+                  , ini >=0.4
                   , config-ini
                   , hedgehog
                   , containers
