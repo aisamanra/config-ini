@@ -211,6 +211,7 @@ import qualified Data.Traversable as F
 import Data.Typeable (Proxy (..), Typeable, typeRep)
 import GHC.Exts (IsList (..))
 import Text.Read (readMaybe)
+import Data.Maybe (fromMaybe)
 
 -- * Utility functions + lens stuffs
 
@@ -607,16 +608,15 @@ listWithSeparator sep fv =
 -- separated by a given string, whose individual values are described
 -- by two different 'FieldValue' values.
 pairWithSeparator :: FieldValue l -> Text -> FieldValue r -> FieldValue (l, r)
-pairWithSeparator left sep right =
-  FieldValue
-    { fvParse = \t ->
-        let (leftChunk, rightChunk) = T.breakOn sep t
-         in do
-              x <- fvParse left leftChunk
-              y <- fvParse right rightChunk
-              return (x, y),
-      fvEmit = \(x, y) -> fvEmit left x <> sep <> fvEmit right y
-    }
+pairWithSeparator left sep right = FieldValue
+  { fvParse = \ t ->
+      let (leftChunk, rightChunk) = (\a -> fromMaybe a $ T.stripPrefix sep a) <$> T.breakOn sep t
+      in do
+        x <- fvParse left leftChunk
+        y <- fvParse right rightChunk
+        return (x, y)
+  , fvEmit = \ (x, y) -> fvEmit left x <> sep <> fvEmit right y
+  }
 
 -- * Parsing INI files
 
