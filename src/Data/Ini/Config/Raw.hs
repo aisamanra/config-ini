@@ -213,7 +213,7 @@ pPair leading = do
   pos <- getCurrentLine
   key <- T.pack `fmap` some (noneOf "[]=:")
   delim <- oneOf ":="
-  val <- T.pack `fmap` manyTill anySingle eol
+  val <- T.pack `fmap` manyTill anySingle (void eol <|> eof)
   return
     ( normalize key,
       IniValue
