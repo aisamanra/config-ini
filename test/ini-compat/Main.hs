@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -65,7 +64,7 @@ toMaps (I2.RawIni m) = conv (fmap sectionToPair m)
     conv = HM.fromList . Fold.toList
 
 textChunk :: Gen Text
-textChunk = fmap T.pack $ Gen.list (Range.linear 1 20) $ Gen.alphaNum
+textChunk = Gen.text (Range.linear 1 20) Gen.alphaNum
 
 mkIni :: Gen I1.Ini
 mkIni = do
