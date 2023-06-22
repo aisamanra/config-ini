@@ -1,5 +1,5 @@
 name:             config-ini
-version:          0.2.5.0
+version:          0.2.6.0
 synopsis:         A library for simple INI-based configuration files.
 homepage:         https://github.com/aisamanra/config-ini
 bug-reports:      https://github.com/aisamanra/config-ini/issues
@@ -22,10 +22,11 @@ copyright:        ©2018 Getty Ritter
 category:         Configuration
 build-type:       Simple
 cabal-version:    1.18
-tested-with:      GHC == 8.8.4, GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2
-extra-source-files:
+tested-with:      GHC == 8.8.4, GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2, GHC == 9.6.2
+extra-doc-files:
   README.md,
-  CHANGELOG.md,
+  CHANGELOG.md
+extra-source-files:
   test/prewritten/cases/*.hs,
   test/prewritten/cases/*.ini
 
