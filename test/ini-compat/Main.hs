@@ -82,7 +82,7 @@ mkComments =
     Gen.list (Range.linear 0 5) $
       Gen.choice
         [ return I2.BlankLine,
-          I2.CommentLine <$> Gen.element ";#" <*> textChunk
+          I2.CommentLine <$> Gen.element (";#" :: String) <*> textChunk
         ]
 
 mkRichIni :: Gen I2.RawIni
