@@ -47,8 +47,8 @@ library
   if impl(ghc > 8.0)
     ghc-options:       -fno-warn-redundant-constraints
   build-depends:       base                  >=4.8   && <5
-                     , containers            >=0.5   && <0.7
-                     , text                  >=1.2.2 && <2.1
+                     , containers            >=0.5   && <0.8
+                     , text                  >=1.2.2 && <2.2
                      , unordered-containers  >=0.2.7 && <0.3
                      , transformers          >=0.4.1 && <0.7
                      , megaparsec            >=7     && <10
