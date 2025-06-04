@@ -97,7 +97,7 @@ module Data.Ini.Config
   )
 where
 
-import Control.Applicative (Alternative (..))
+import Control.Applicative (Alternative (..), asum)
 import Control.Monad.Trans.Except
 import Data.Ini.Config.Raw
 import Data.Sequence (Seq)
@@ -109,13 +109,13 @@ import Data.Typeable (Proxy (..), Typeable, typeRep)
 import GHC.Exts (IsList (..))
 import Text.Read (readMaybe)
 
-lkp :: NormalizedText -> Seq (NormalizedText, a) -> Maybe a
+lkp :: NormalizedText -> Seq (NormalizedText, a) -> [a]
 lkp t = go . Seq.viewl
   where
     go ((t', x) Seq.:< rs)
-      | t == t' = Just x
+      | t == t' = x : go (Seq.viewl rs)
       | otherwise = go (Seq.viewl rs)
-    go Seq.EmptyL = Nothing
+    go Seq.EmptyL = []
 
 addLineInformation :: Int -> Text -> StParser s a -> StParser s a
 addLineInformation lineNo sec = withExceptT go
@@ -150,16 +150,22 @@ parseIniFile text (IniParser mote) = do
 --   support classic INI files with capitalized section names, section
 --   lookup is __case-insensitive__.
 --
+--   If multiple sections exist with the same name, this will fail with
+--   an error.
+--
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ section "ONE" (field "x")
 --   Right "hello"
 --   >>> parseIniFile "[ONE]\nx = hello\n" $ section "TWO" (field "x")
 --   Left "No top-level section named \"TWO\""
+--   >>> parseIniFile "[ONE]\nx = hello\n[ONE]\ny = goodbye\n" $ section "ONE" (field "x")
+--   Left "Multiple top-level section named \"ONE\""
 section :: Text -> SectionParser a -> IniParser a
 section name (SectionParser thunk) = IniParser $
   ExceptT $ \(RawIni ini) ->
     case lkp (normalize name) ini of
-      Nothing -> Left ("No top-level section named " ++ show name)
-      Just sec -> runExceptT thunk sec
+      [] -> Left ("No top-level section named " ++ show name)
+      [sec] -> runExceptT thunk sec
+      _ -> Left ("Multiple top-level sections named " ++ show name)
 
 -- | Find multiple named sections in the INI file and parse them all
 --   with the provided section parser. In order to support classic INI
@@ -237,8 +243,12 @@ sectionMb :: Text -> SectionParser a -> IniParser (Maybe a)
 sectionMb name (SectionParser thunk) = IniParser $
   ExceptT $ \(RawIni ini) ->
     case lkp (normalize name) ini of
-      Nothing -> return Nothing
-      Just sec -> Just `fmap` runExceptT thunk sec
+      [] -> return Nothing
+      secs ->
+        case asum (mapM (runExceptT thunk) secs) of
+          [] -> return Nothing
+          [r] -> return (Just r)
+          _ -> Left ("Ambiguous item: multiple sections named " ++ show name)
 
 -- | Find a named section in the INI file and parse it with the provided
 --   section parser, returning a default value if the section does not exist.
@@ -254,8 +264,9 @@ sectionDef :: Text -> a -> SectionParser a -> IniParser a
 sectionDef name def (SectionParser thunk) = IniParser $
   ExceptT $ \(RawIni ini) ->
     case lkp (normalize name) ini of
-      Nothing -> return def
-      Just sec -> runExceptT thunk sec
+      [] -> return def
+      [sec] -> runExceptT thunk sec
+      _ -> Left ("Ambiguous item: multiple sections named " ++ show name)
 
 ---
 
@@ -267,7 +278,10 @@ getSectionName = ExceptT (return . isName)
 
 rawFieldMb :: Text -> StParser IniSection (Maybe IniValue)
 rawFieldMb name = ExceptT $ \m ->
-  return (lkp (normalize name) (isVals m))
+  case lkp (normalize name) (isVals m) of
+    [] -> return Nothing
+    [x] -> return (Just x)
+    _ -> Left ("Ambiguous name: multiple fields named " ++ show name)
 
 rawField :: Text -> StParser IniSection IniValue
 rawField name = do
@@ -351,8 +365,9 @@ fieldDef :: Text -> Text -> SectionParser Text
 fieldDef name def = SectionParser $
   ExceptT $ \m ->
     case lkp (normalize name) (isVals m) of
-      Nothing -> return def
-      Just x -> return (getVal x)
+      [] -> return def
+      [x] -> return (getVal x)
+      _ -> Left ("Ambiguous field: multiple fields named " ++ show name)
 
 -- | Retrieve a field, parsing it according to the given parser, and returning
 --   a default value if it does not exist. If the parser fails, then this will
